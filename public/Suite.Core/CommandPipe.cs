@@ -14,10 +14,12 @@ public sealed class CommandPipe<T> : IDisposable where T : class
     private const PipeOptions Options = PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly;
     private readonly CancellationTokenSource shutdown = new();
     private readonly Task listener;
+    private int disposed;
 
     public CommandPipe(string application, Func<T, CancellationToken, Task<CommandReply>> dispatch, Action<T>? afterReply = null)
     {
-        listener = Task.Run(() => Listen(PipeName(application), dispatch, afterReply, shutdown.Token));
+        var token = shutdown.Token;
+        listener = Task.Run(() => Listen(PipeName(application), dispatch, afterReply, token));
     }
 
     private static string PipeName(string application)
@@ -93,6 +95,8 @@ public sealed class CommandPipe<T> : IDisposable where T : class
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+            return;
         shutdown.Cancel();
         // A UI dispatch may still be unwinding, so the UI thread must not wait on it.
         _ = listener.ContinueWith(_ => shutdown.Dispose(), TaskScheduler.Default);

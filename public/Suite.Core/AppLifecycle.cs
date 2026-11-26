@@ -86,6 +86,7 @@ public sealed class TrayContext : ApplicationContext
     private readonly ContextMenuStrip menu = new();
     private readonly CommandPipe<string> listener;
     private LicenseMonitor? licenseMonitor;
+    private bool disposed;
 
     public TrayContext(string id, string title, PopupWindow popup, Icon icon, bool trayVisible = true)
     {
@@ -141,14 +142,16 @@ public sealed class TrayContext : ApplicationContext
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !disposed)
         {
+            disposed = true;
             Application.Idle -= OpenOnce;
             listener.Dispose();
             licenseMonitor?.Dispose();
             tray.Dispose();
             menu.Dispose();
-            popup.Dispose();
+            if (!popup.IsDisposed)
+                popup.Dispose();
         }
         base.Dispose(disposing);
     }

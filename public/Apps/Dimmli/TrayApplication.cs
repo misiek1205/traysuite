@@ -48,6 +48,7 @@ internal sealed class TrayApplication : ApplicationContext
     private bool refreshRequested;
     private bool diagnosticsRequested;
     private bool exiting;
+    private bool disposed;
     private bool proEnabled;
     private bool displaysReady;
     private bool canAdjustDisplays;
@@ -847,8 +848,9 @@ internal sealed class TrayApplication : ApplicationContext
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !disposed)
         {
+            disposed = true;
             SystemEvents.DisplaySettingsChanged -= DisplayChanged;
             SystemEvents.PowerModeChanged -= PowerChanged;
             SystemEvents.TimeChanged -= TimeChanged;

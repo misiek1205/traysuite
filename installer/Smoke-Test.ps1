@@ -149,13 +149,14 @@ try {
     Write-Host $_.Exception.Message
     $log = Join-Path $root 'setup.log'
     if (Test-Path $log) { Get-Content -Tail 12 -LiteralPath $log | Write-Host }
+    $testedExecutables = (@('TraySuite.Hub') + @($testedModules) | ForEach-Object { [Regex]::Escape($_ + '.exe') }) -join '|'
+    Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProviderName -in '.NET Runtime', 'Application Error' -and $_.Message -match $testedExecutables } |
+        Select-Object -First 5 -ExpandProperty Message | Write-Host
     if ($hubProcess) {
         $hubProcess.Refresh()
         if ($hubProcess.HasExited) {
             Write-Host "Hub exited with code $($hubProcess.ExitCode)."
-            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue |
-                Where-Object { $_.ProviderName -in '.NET Runtime', 'Application Error' -and $_.Message -like '*TraySuite*' } |
-                Select-Object -First 3 -ExpandProperty Message | Write-Host
         } else {
             $condition = [System.Windows.Automation.PropertyCondition]::new(
                 [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $hubProcess.Id)
