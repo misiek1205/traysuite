@@ -86,20 +86,6 @@ function Get-ModuleProcess([string]$Name, [string]$Exe) {
     Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Select-Object -First 1
 }
 
-function Find-RemovalConfirmation {
-    $pidCondition = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $hubProcess.Id)
-    $yesCondition = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::AutomationIdProperty, '6')
-    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [System.Windows.Automation.TreeScope]::Children, $pidCondition)
-    foreach ($window in $windows) {
-        if ($window.Current.ClassName -ne '#32770') { continue }
-        $yes = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $yesCondition)
-        if ($yes -and $yes.Current.IsEnabled) { return $yes }
-    }
-}
-
 New-Item -ItemType Directory -Path $root | Out-Null
 try {
     Invoke-Exe $setup "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$hubDir`" /LOG=`"$root\setup.log`""
@@ -127,6 +113,7 @@ try {
         Invoke-HubButton @("Open $name", "Otwórz $name")
         $module = Wait-For "$name process launched by Hub" { Get-ModuleProcess $name $exe }
         if ($module.WaitForExit(1400)) { throw "$name exited during startup ($($module.ExitCode))." }
+        Write-Host "Hub opened $name ($Runtime)."
         if ($name -eq 'Dimmli') {
             Invoke-Exe $exe '--list'
             Invoke-Exe $exe '--brightness 101' 2
@@ -135,7 +122,7 @@ try {
 
         Invoke-Exe $hub '--open'
         Invoke-HubButton @("Uninstall $name", "Odinstaluj $name")
-        $confirmation = Wait-For 'the uninstall confirmation' { Find-RemovalConfirmation }
+        $confirmation = Wait-For 'the uninstall confirmation' { Find-HubControl @('Yes', 'Tak') }
         Invoke-NativeClick $confirmation
         Wait-For "$name uninstallation" { !(Test-Path -LiteralPath $moduleDirectory) } | Out-Null
         if (!$module.WaitForExit(15000) -or $module.ExitCode -ne 0) {
@@ -155,6 +142,7 @@ try {
         throw 'The Hub executable or its autostart entry survived uninstall.'
     }
 } catch {
+    Write-Host $_.Exception.Message
     $log = Join-Path $root 'setup.log'
     if (Test-Path $log) { Get-Content -Tail 12 -LiteralPath $log | Write-Host }
     if ($hubProcess) {
