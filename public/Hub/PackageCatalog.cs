@@ -24,7 +24,7 @@ internal sealed class PackageCatalog
 {
     public static readonly string Runtime = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
-    private static readonly Uri PublicManifest = new("https://github.com/misiek1205/dimmli/releases/latest/download/manifest.json");
+    private static readonly Uri PublicManifest = new("https://github.com/misiek1205/traysuite/releases/latest/download/manifest.json");
     private static readonly Catalog BuiltIn = ReadBuiltIn();
     private readonly string? local;
     private readonly HttpClient http;

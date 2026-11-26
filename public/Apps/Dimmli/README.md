@@ -6,7 +6,7 @@ Click the sun icon in the system tray to adjust each monitor independently.
 It uses DDC/CI for compatible external monitors and Windows WMI for built-in
 laptop displays.
 
-[Download for Windows x64 or ARM64](https://github.com/misiek1205/dimmli/releases/latest) · [MIT license](../../LICENSE)
+[Download for Windows x64 or ARM64](https://github.com/misiek1205/traysuite/releases/latest) · [MIT license](../../LICENSE)
 
 ## Get started
 
