@@ -1,0 +1,40 @@
+name: Build for Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish portable executable
+        run: dotnet publish src/Brightness/Brightness.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -warnaserror -o artifacts/app
+      - name: Check that the application stays running after launch
+        if: matrix.rid == 'win-x64'
+        shell: pwsh
+        run: |
+          $process = Start-Process artifacts/app/Brightness.exe -PassThru
+          try {
+            if ($process.WaitForExit(5000)) {
+              throw "Brightness exited during startup with status $($process.ExitCode)."
+            }
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id
+            }
+          }
