@@ -1,4 +1,4 @@
-namespace TrayLuminance;
+namespace Dimmli;
 
 internal static class Program
 {

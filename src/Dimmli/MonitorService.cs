@@ -1,8 +1,8 @@
 using System.Management;
 using System.Runtime.InteropServices;
-using static TrayLuminance.MonitorNative;
+using static Dimmli.MonitorNative;
 
-namespace TrayLuminance;
+namespace Dimmli;
 
 internal sealed record Display(string Name, int Brightness, Func<int, int?>? SetBrightness, string? Id = null);
 

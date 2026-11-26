@@ -2,12 +2,12 @@
 
 [Setup]
 AppId={{DBE5D352-0CB5-4FF0-9A8E-C8584C29D696}
-AppName=TrayLuminance
+AppName=Dimmli
 AppVersion={#AppVersion}
 AppPublisher=misiek1205
-AppPublisherURL=https://github.com/misiek1205/trayluminance
-AppUpdatesURL=https://github.com/misiek1205/trayluminance/releases/latest
-DefaultDirName={localappdata}\Programs\TrayLuminance
+AppPublisherURL=https://github.com/misiek1205/dimmli
+AppUpdatesURL=https://github.com/misiek1205/dimmli/releases/latest
+DefaultDirName={localappdata}\Programs\Dimmli
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed={#AppArchitecture}
@@ -18,9 +18,9 @@ MinVersion=10.0.22000
 MinVersion=10.0.19045
 #endif
 AppMutex=Local\Brightness.Tray
-SetupIconFile=..\src\TrayLuminance\Sun.ico
-UninstallDisplayIcon={app}\TrayLuminance.exe
-OutputBaseFilename=TrayLuminance-{#AppVersion}-win-{#AppArchitecture}-Setup
+SetupIconFile=..\src\Dimmli\Sun.ico
+UninstallDisplayIcon={app}\Dimmli.exe
+OutputBaseFilename=Dimmli-{#AppVersion}-win-{#AppArchitecture}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 
@@ -30,45 +30,55 @@ Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
 
 [CustomMessages]
 english.StartupTitle=Startup
-english.StartupDescription=Choose when TrayLuminance starts.
-english.StartupHelp=TrayLuminance can start in the notification area when you sign in.
-english.StartupOption=Start TrayLuminance with Windows
-english.LaunchBrightness=Start TrayLuminance now
+english.StartupDescription=Choose when Dimmli starts.
+english.StartupHelp=Dimmli can start in the notification area when you sign in.
+english.StartupOption=Start Dimmli with Windows
+english.LaunchBrightness=Start Dimmli now
 polish.StartupTitle=Autostart
-polish.StartupDescription=Wybierz, kiedy ma się uruchamiać TrayLuminance.
-polish.StartupHelp=TrayLuminance może uruchamiać się w tle i wyświetlać ikonę obok zegara po zalogowaniu.
-polish.StartupOption=Uruchamiaj TrayLuminance z Windows
-polish.LaunchBrightness=Uruchom teraz TrayLuminance
+polish.StartupDescription=Wybierz, kiedy ma się uruchamiać Dimmli.
+polish.StartupHelp=Dimmli może uruchamiać się w tle i wyświetlać ikonę obok zegara po zalogowaniu.
+polish.StartupOption=Uruchamiaj Dimmli z Windows
+polish.LaunchBrightness=Uruchom teraz Dimmli
 
 [Files]
 Source: "{#AppFiles}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\TrayLuminance"; Filename: "{app}\TrayLuminance.exe"
+Name: "{userprograms}\Dimmli"; Filename: "{app}\Dimmli.exe"
 
 [Registry]
-Root: HKCU; Subkey: "{#StartupKey}"; ValueType: string; ValueName: "Brightness"; ValueData: """{app}\TrayLuminance.exe"""; Check: StartWithWindows
+Root: HKCU; Subkey: "{#StartupKey}"; ValueType: string; ValueName: "Brightness"; ValueData: """{app}\Dimmli.exe"""; Check: StartWithWindows
 Root: HKCU; Subkey: "{#StartupKey}"; ValueType: none; ValueName: "Brightness"; Flags: deletevalue; Check: not StartWithWindows
 
 [Run]
-Filename: "{app}\TrayLuminance.exe"; Description: "{cm:LaunchBrightness}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Dimmli.exe"; Description: "{cm:LaunchBrightness}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var
   StartupPage: TInputOptionWizardPage;
+  IsUpgrade: Boolean;
 
 procedure InitializeWizard;
 begin
   StartupPage := CreateInputOptionPage(wpSelectDir, CustomMessage('StartupTitle'),
     CustomMessage('StartupDescription'), CustomMessage('StartupHelp'), False, False);
   StartupPage.Add(CustomMessage('StartupOption'));
-  StartupPage.Values[0] := (GetPreviousData('Installed', '') = '') or
-    RegValueExists(HKCU, '{#StartupKey}', 'Brightness');
+  IsUpgrade := GetPreviousData('Installed', '') <> '';
+  StartupPage.Values[0] := not IsUpgrade or RegValueExists(HKCU, '{#StartupKey}', 'Brightness');
 end;
 
 procedure RegisterPreviousData(PreviousDataKey: Integer);
 begin
   SetPreviousData(PreviousDataKey, 'Installed', 'yes');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and IsUpgrade then
+  begin
+    DeleteFile(ExpandConstant('{app}\TrayLuminance.exe'));
+    DeleteFile(ExpandConstant('{userprograms}\TrayLuminance.lnk'));
+  end;
 end;
 
 function StartWithWindows: Boolean;
@@ -82,6 +92,6 @@ var
 begin
   if (CurUninstallStep = usPostUninstall) and
      RegQueryStringValue(HKCU, '{#StartupKey}', 'Brightness', StartupCommand) and
-     (CompareText(StartupCommand, '"' + ExpandConstant('{app}\TrayLuminance.exe') + '"') = 0) then
+     (CompareText(StartupCommand, '"' + ExpandConstant('{app}\Dimmli.exe') + '"') = 0) then
     RegDeleteValue(HKCU, '{#StartupKey}', 'Brightness');
 end;

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace TrayLuminance;
+namespace Dimmli;
 
 internal static class MonitorNative
 {

@@ -1,4 +1,4 @@
-namespace TrayLuminance;
+namespace Dimmli;
 
 internal sealed class BrightnessPanel : Form
 {
@@ -6,7 +6,7 @@ internal sealed class BrightnessPanel : Form
     private readonly Panel scroller = new();
     private readonly TableLayoutPanel rows = new();
     private readonly TableLayoutPanel shortcuts = new();
-    private readonly TrackBar master = new();
+    private readonly PopupSlider master = new();
     private readonly Label offsetLabel = new();
     private readonly Button applyDay;
     private readonly Button applyEvening;
@@ -18,11 +18,14 @@ internal sealed class BrightnessPanel : Form
     private bool shortcutsRequested;
     private Rectangle workingArea;
     private Point anchor;
-    private const int RowHeight = 76;
+    private const int HeaderHeight = 78;
+    private const int RowHeight = 72;
+    private const int RowGap = 8;
+    private const int FooterHeight = 36;
 
     public BrightnessPanel(Action refresh, Action<Profile> apply, Action<Profile> save)
     {
-        Text = "TrayLuminance";
+        Text = "Dimmli";
         ShowInTaskbar = false;
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;
@@ -31,73 +34,109 @@ internal sealed class BrightnessPanel : Form
         TopMost = true;
         KeyPreview = true;
 
-        BackColor = SystemColors.ActiveBorder;
+        var theme = PopupAppearance.Current;
+        Font = PopupAppearance.CaptionFont;
+        BackColor = theme.Border;
+        ForeColor = theme.Text;
         Padding = new Padding(1);
         layout.Dock = DockStyle.Fill;
-        layout.BackColor = SystemColors.Window;
+        layout.BackColor = theme.Background;
         layout.ColumnCount = 1;
         layout.RowCount = 4;
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, HeaderHeight));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, FooterHeight));
         Controls.Add(layout);
 
         var header = new TableLayoutPanel
         {
-            BackColor = SystemColors.Control,
-            ColumnCount = 2,
+            ColumnCount = 3,
+            RowCount = 2,
             Dock = DockStyle.Fill,
+            Padding = new Padding(18, 12, 16, 10),
             Margin = Padding.Empty
         };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        using var resource = typeof(BrightnessPanel).Assembly.GetManifestResourceStream("Dimmli.Sun.ico")!;
+        using var logo = new Icon(resource, 48, 48);
+        var bitmap = logo.ToBitmap();
+        Disposed += (_, _) => bitmap.Dispose();
+        var mark = new PictureBox
+        {
+            Image = bitmap, Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom,
+            Margin = new Padding(0, 5, 9, 5)
+        };
+        header.Controls.Add(mark, 0, 0);
+        header.SetRowSpan(mark, 2);
         header.Controls.Add(new Label
         {
-            Text = Texts.Get("Monitor brightness", "Jasność monitorów"),
-            Font = new Font(SystemFonts.MessageBoxFont!.FontFamily, 14, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft,
-            Dock = DockStyle.Fill,
-            Margin = new Padding(16, 0, 0, 0),
-            AutoEllipsis = true
-        }, 0, 0);
-        var refreshButton = new Button
+            Text = "Dimmli", Font = PopupAppearance.TitleFont,
+            TextAlign = ContentAlignment.BottomLeft, Dock = DockStyle.Fill, Margin = Padding.Empty
+        }, 1, 0);
+        header.Controls.Add(new Label
+        {
+            Text = Texts.Get("Monitor brightness", "Jasność monitorów"), ForeColor = theme.Muted,
+            TextAlign = ContentAlignment.TopLeft, Dock = DockStyle.Fill, Margin = Padding.Empty
+        }, 1, 1);
+        var refreshButton = new PopupButton
         {
             Text = Texts.Get("Refresh", "Odśwież"),
             Anchor = AnchorStyles.Left | AnchorStyles.Right,
-            AutoSize = true,
-            Margin = new Padding(0, 0, 12, 0)
+            Height = 33,
+            Margin = new Padding(0, 0, 0, 2)
         };
         refreshButton.Click += (_, _) => refresh();
-        header.Controls.Add(refreshButton, 1, 0);
+        header.Controls.Add(refreshButton, 2, 0);
+        header.SetRowSpan(refreshButton, 2);
         layout.Controls.Add(header, 0, 0);
 
         shortcuts.Dock = DockStyle.Fill;
-        shortcuts.Margin = new Padding(12, 0, 12, 0);
+        shortcuts.Margin = new Padding(16, 0, 16, 10);
         shortcuts.ColumnCount = 1;
         shortcuts.RowCount = 2;
-        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
-        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
+        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
         layout.Controls.Add(shortcuts, 0, 1);
 
-        var allDisplays = new GroupBox
+        string allDisplaysLabel = Texts.Get("All monitors", "Wszystkie monitory");
+        var allDisplays = new PopupCard(theme.Highlight)
         {
-            Text = Texts.Get("All monitors", "Wszystkie monitory"),
-            Dock = DockStyle.Fill
+            BackColor = theme.Background, Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 6), Padding = new Padding(12, 6, 12, 3)
         };
-        var masterLayout = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill };
+        var masterLayout = new TableLayoutPanel
+        {
+            ColumnCount = 2, RowCount = 2, Dock = DockStyle.Fill, BackColor = theme.Highlight,
+            Margin = Padding.Empty
+        };
         masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
+        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 48));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 52));
+        masterLayout.Controls.Add(new Label
+        {
+            Text = allDisplaysLabel, Dock = DockStyle.Fill, Font = PopupAppearance.LabelFont,
+            TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty
+        }, 0, 0);
         offsetLabel.Dock = DockStyle.Fill;
+        offsetLabel.ForeColor = theme.Accent;
+        offsetLabel.Font = PopupAppearance.LabelFont;
+        offsetLabel.Margin = Padding.Empty;
         offsetLabel.TextAlign = ContentAlignment.MiddleRight;
         master.Dock = DockStyle.Fill;
+        master.Margin = Padding.Empty;
         master.AutoSize = false;
         master.Minimum = -100;
         master.Maximum = 100;
         master.SmallChange = 1;
         master.LargeChange = 10;
         master.TickStyle = TickStyle.None;
-        master.AccessibleName = allDisplays.Text;
+        master.AccessibleName = allDisplaysLabel;
         master.AccessibleDescription = Texts.Get("Change each monitor by the same amount.",
             "Zmień jasność każdego monitora o tę samą wartość.");
         master.Scroll += (_, _) => ShiftDisplays();
@@ -112,31 +151,53 @@ internal sealed class BrightnessPanel : Form
         master.KeyUp += (_, _) => ResetMaster();
         master.LostFocus += (_, _) => ResetMaster();
         ResetMaster();
-        masterLayout.Controls.Add(master, 0, 0);
+        masterLayout.Controls.Add(master, 0, 1);
+        masterLayout.SetColumnSpan(master, 2);
         masterLayout.Controls.Add(offsetLabel, 1, 0);
         allDisplays.Controls.Add(masterLayout);
         shortcuts.Controls.Add(allDisplays, 0, 0);
 
-        var profiles = new GroupBox { Text = Texts.Get("Brightness profiles", "Profile jasności"), Dock = DockStyle.Fill };
-        var buttons = new TableLayoutPanel { ColumnCount = 4, RowCount = 1, Dock = DockStyle.Fill };
-        for (int column = 0; column < buttons.ColumnCount; column++)
-            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        var profiles = new TableLayoutPanel
+        {
+            ColumnCount = 1, RowCount = 2, Dock = DockStyle.Fill, Margin = Padding.Empty
+        };
+        profiles.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
+        profiles.RowStyles.Add(new RowStyle(SizeType.Percent, 64));
+        profiles.Controls.Add(new Label
+        {
+            Text = Texts.Get("Brightness profiles", "Profile jasności"), ForeColor = theme.Muted,
+            Dock = DockStyle.Fill, Margin = new Padding(1, 0, 0, 0)
+        }, 0, 0);
+        var buttons = new TableLayoutPanel
+        {
+            ColumnCount = 5, RowCount = 1, Dock = DockStyle.Fill, Margin = Padding.Empty
+        };
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 23));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 10));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 23));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27));
         applyDay = AddProfileButton(Texts.Get("Day", "Dzień"), 0, () => apply(Profile.Day));
         saveDay = AddProfileButton(Texts.Get("Save day", "Zapisz dzień"), 1, () => save(Profile.Day));
-        applyEvening = AddProfileButton(Texts.Get("Evening", "Wieczór"), 2, () => apply(Profile.Evening));
-        saveEvening = AddProfileButton(Texts.Get("Save evening", "Zapisz wieczór"), 3, () => save(Profile.Evening));
-        profiles.Controls.Add(buttons);
+        applyEvening = AddProfileButton(Texts.Get("Evening", "Wieczór"), 3, () => apply(Profile.Evening));
+        saveEvening = AddProfileButton(Texts.Get("Save evening", "Zapisz wieczór"), 4, () => save(Profile.Evening));
+        profiles.Controls.Add(buttons, 0, 1);
         shortcuts.Controls.Add(profiles, 0, 1);
 
         Button AddProfileButton(string text, int column, Action action)
         {
-            var button = new Button { Text = text, Dock = DockStyle.Fill, Margin = new Padding(2, 0, 2, 2) };
+            var button = new PopupButton
+            {
+                Text = text, Dock = DockStyle.Fill, Margin = new Padding(0, 1, 2, 1),
+                Font = column is 0 or 3 ? PopupAppearance.LabelFont : PopupAppearance.CaptionFont,
+                ForeColor = column is 0 or 3 ? theme.Accent : theme.Text
+            };
             button.Click += (_, _) => action();
             buttons.Controls.Add(button, column, 0);
             return button;
         }
 
-        scroller.Margin = Padding.Empty;
+        scroller.Margin = new Padding(16, 0, 16, 0);
         scroller.Dock = DockStyle.Fill;
         scroller.AutoScroll = true;
         rows.ColumnCount = 1;
@@ -148,7 +209,7 @@ internal sealed class BrightnessPanel : Form
         layout.Controls.Add(scroller, 0, 2);
 
         status.Dock = DockStyle.Fill;
-        status.BackColor = SystemColors.Control;
+        status.ForeColor = theme.Muted;
         status.TextAlign = ContentAlignment.MiddleLeft;
         status.Padding = new Padding(16, 0, 6, 0);
         status.Margin = Padding.Empty;
@@ -172,6 +233,27 @@ internal sealed class BrightnessPanel : Form
         Activate();
     }
 
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            const int DropShadow = 0x00020000;
+            var parameters = base.CreateParams;
+            parameters.ClassStyle |= DropShadow;
+            return parameters;
+        }
+    }
+
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        if (Width <= 0 || Height <= 0)
+            return;
+
+        using var outline = PopupAppearance.Rounded(new RectangleF(0, 0, Width, Height), LogicalToDeviceUnits(14));
+        Region = new Region(outline);
+    }
+
     private void ResizeAndPlace()
     {
         if (workingArea.IsEmpty)
@@ -180,13 +262,13 @@ internal sealed class BrightnessPanel : Form
         int S(int units) => LogicalToDeviceUnits(units);
         int gap = S(8);
         int width = Math.Min(S(428), Math.Max(1, workingArea.Width - 2 * gap));
-        int shortcutsHeight = shortcutsRequested ? 116 : 0;
-        int height = Math.Min(S(92 + shortcutsHeight + Math.Max(1, rows.RowCount) * RowHeight),
+        int shortcutsHeight = shortcutsRequested ? 132 : 0;
+        int height = Math.Min(S(2 + HeaderHeight + FooterHeight + shortcutsHeight
+            + Math.Max(1, rows.RowCount) * (RowHeight + RowGap)),
             Math.Max(1, workingArea.Height - 2 * gap));
-        layout.RowStyles[0].Height = S(56);
+        layout.RowStyles[0].Height = S(HeaderHeight);
         layout.RowStyles[1].Height = S(shortcutsHeight);
-        layout.RowStyles[3].Height = S(34);
-        ((TableLayoutPanel)layout.GetControlFromPosition(0, 0)!).ColumnStyles[1].Width = S(106);
+        layout.RowStyles[3].Height = S(FooterHeight);
         foreach (Control row in rows.Controls)
             row.Height = S(RowHeight);
 
@@ -297,38 +379,42 @@ internal sealed class BrightnessPanel : Form
     }
 }
 
-internal sealed class BrightnessRow : Panel
+internal sealed class BrightnessRow : PopupCard
 {
-    private readonly TrackBar slider;
+    private readonly PopupSlider slider;
     private readonly Label valueLabel;
     public Display Display { get; }
     public int Confirmed { get; private set; }
     public int Target => slider.Value;
     public event Action<BrightnessRow, int>? BrightnessChanged;
 
-    public BrightnessRow(Display display)
+    public BrightnessRow(Display display) : base(PopupAppearance.Current.Card)
     {
         Display = display;
         Confirmed = Math.Clamp(display.Brightness, 0, 100);
-        Height = 76;
+        var theme = PopupAppearance.Current;
+        BackColor = theme.Background;
+        Height = 72;
         Dock = DockStyle.Top;
-        Margin = Padding.Empty;
+        Margin = new Padding(0, 0, 0, 8);
+        Padding = new Padding(12, 7, 12, 5);
 
         var card = new TableLayoutPanel
         {
             ColumnCount = 2,
             RowCount = 2,
             Dock = DockStyle.Fill,
-            Padding = new Padding(16, 6, 16, 0)
+            BackColor = theme.Card
         };
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60));
-        card.RowStyles.Add(new RowStyle(SizeType.Percent, 44));
-        card.RowStyles.Add(new RowStyle(SizeType.Percent, 56));
+        card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         Controls.Add(card);
         var name = new Label
         {
             Text = display.Name,
+            Font = PopupAppearance.LabelFont,
             AutoEllipsis = true,
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
@@ -341,9 +427,11 @@ internal sealed class BrightnessRow : Panel
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleRight,
             Margin = Padding.Empty,
+            Font = PopupAppearance.LabelFont,
+            ForeColor = theme.Accent,
             Text = $"{Confirmed}%"
         };
-        slider = new TrackBar
+        slider = new PopupSlider
         {
             Minimum = 0,
             Maximum = 100,
@@ -363,7 +451,7 @@ internal sealed class BrightnessRow : Panel
             {
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = SystemColors.GrayText,
+                ForeColor = theme.Muted,
                 Margin = Padding.Empty,
                 Text = Texts.Get("Brightness control unavailable", "Regulacja jasności niedostępna")
             };

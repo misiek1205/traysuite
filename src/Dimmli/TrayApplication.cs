@@ -1,7 +1,7 @@
 using Microsoft.Win32;
 using System.Text.Json;
 
-namespace TrayLuminance;
+namespace Dimmli;
 
 internal sealed class TrayApplication : ApplicationContext
 {
@@ -13,6 +13,7 @@ internal sealed class TrayApplication : ApplicationContext
     private readonly Icon icon;
     private readonly BrightnessPanel panel;
     private readonly MonitorService service = new();
+    // Keep profiles created by earlier releases under the previous app name.
     private readonly ProfileStore profileStore = new(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TrayLuminance", "profiles.json"));
     private Dictionary<Profile, Dictionary<string, int>> savedProfiles = [];
@@ -29,7 +30,7 @@ internal sealed class TrayApplication : ApplicationContext
 
     public TrayApplication()
     {
-        using var resource = typeof(TrayApplication).Assembly.GetManifestResourceStream("TrayLuminance.Sun.ico")!;
+        using var resource = typeof(TrayApplication).Assembly.GetManifestResourceStream("Dimmli.Sun.ico")!;
         using var sourceIcon = new Icon(resource);
         icon = (Icon)sourceIcon.Clone();
         panel = new BrightnessPanel(RequestRefresh, ApplyProfile, SaveProfile);
@@ -61,7 +62,7 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Texts.Get("Exit", "Zakończ")).Click += (_, _) => Exit();
 
-        tray = new NotifyIcon { Icon = icon, Text = "TrayLuminance", ContextMenuStrip = menu, Visible = true };
+        tray = new NotifyIcon { Icon = icon, Text = "Dimmli", ContextMenuStrip = menu, Visible = true };
         tray.MouseClick += (_, args) =>
         {
             if (args.Button != MouseButtons.Left)
@@ -257,7 +258,7 @@ internal sealed class TrayApplication : ApplicationContext
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             MessageBox.Show(Texts.Get("Could not update Windows startup settings.",
-                "Nie udało się zmienić ustawień autostartu."), "TrayLuminance", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "Nie udało się zmienić ustawień autostartu."), "Dimmli", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

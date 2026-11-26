@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace TrayLuminance;
+namespace Dimmli;
 
 internal static class Texts
 {

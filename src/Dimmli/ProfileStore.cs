@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace TrayLuminance;
+namespace Dimmli;
 
 internal enum Profile { Day, Evening }
 
