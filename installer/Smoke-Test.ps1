@@ -8,6 +8,16 @@
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class TraySuiteSmokeNative
+{
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+}
+'@
 $artifact = (Resolve-Path "$PSScriptRoot/../artifacts/public/$Runtime").Path
 $setup = (Get-ChildItem "$artifact/*-Setup.exe").FullName
 $root = Join-Path $env:RUNNER_TEMP "TraySuite smoke test $PID"
@@ -61,37 +71,32 @@ function Find-HubControl([string[]]$Names) {
 
 function Invoke-HubButton([string[]]$Names) {
     $control = Wait-For ($Names -join ' / ') { Find-HubControl $Names }
-    $control.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Invoke-NativeClick $control
+}
+
+function Invoke-NativeClick($Control) {
+    $handle = [IntPtr]::new($Control.Current.NativeWindowHandle)
+    if ($handle -eq [IntPtr]::Zero -or
+        ![TraySuiteSmokeNative]::PostMessage($handle, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)) {
+        throw 'Could not post the click to the button.'
+    }
 }
 
 function Get-ModuleProcess([string]$Name, [string]$Exe) {
     Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Select-Object -First 1
 }
 
-function Confirm-Removal {
-    # Keep the confirmation on a separate automation thread in case Invoke waits for the modal dialog.
-    Start-Job -ArgumentList $hubProcess.Id -ScriptBlock {
-        param($HubId)
-        $ErrorActionPreference = 'Stop'
-        Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-        $pidCondition = [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $HubId)
-        $yesCondition = [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::AutomationIdProperty, '6')
-        $deadline = [DateTime]::UtcNow.AddSeconds(25)
-        do {
-            $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-                [System.Windows.Automation.TreeScope]::Children, $pidCondition)
-            foreach ($window in $windows) {
-                $yes = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $yesCondition)
-                if ($yes -and $yes.Current.IsEnabled -and !$yes.Current.IsOffscreen) {
-                    $yes.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-                    return
-                }
-            }
-            Start-Sleep -Milliseconds 200
-        } while ([DateTime]::UtcNow -lt $deadline)
-        throw 'The Hub did not present an uninstall confirmation.'
+function Find-RemovalConfirmation {
+    $pidCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $hubProcess.Id)
+    $yesCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::AutomationIdProperty, '6')
+    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+        [System.Windows.Automation.TreeScope]::Children, $pidCondition)
+    foreach ($window in $windows) {
+        if ($window.Current.ClassName -ne '#32770') { continue }
+        $yes = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $yesCondition)
+        if ($yes -and $yes.Current.IsEnabled) { return $yes }
     }
 }
 
@@ -129,14 +134,9 @@ try {
         }
 
         Invoke-Exe $hub '--open'
-        $confirmation = Confirm-Removal
-        try {
-            Invoke-HubButton @("Uninstall $name", "Odinstaluj $name")
-            if (!(Wait-Job $confirmation -Timeout 30)) { throw 'Uninstall confirmation timed out.' }
-            Receive-Job $confirmation -ErrorAction Stop
-        } finally {
-            Remove-Job $confirmation -Force
-        }
+        Invoke-HubButton @("Uninstall $name", "Odinstaluj $name")
+        $confirmation = Wait-For 'the uninstall confirmation' { Find-RemovalConfirmation }
+        Invoke-NativeClick $confirmation
         Wait-For "$name uninstallation" { !(Test-Path -LiteralPath $moduleDirectory) } | Out-Null
         if (!$module.WaitForExit(15000) -or $module.ExitCode -ne 0) {
             throw "$name did not exit normally during removal."
