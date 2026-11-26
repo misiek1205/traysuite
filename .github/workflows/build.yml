@@ -11,10 +11,14 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-2025
     strategy:
       matrix:
-        rid: [win-x64, win-arm64]
+        include:
+          - rid: win-x64
+            runner: windows-2025
+          - rid: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -22,13 +26,27 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.x'
-      - name: Publish portable executable
-        run: dotnet publish src/Brightness/Brightness.csproj -c Release -r ${{ matrix.rid }} --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -warnaserror -o artifacts/app
-      - name: Check that the application stays running after launch
-        if: matrix.rid == 'win-x64'
+      - name: Build installer and portable ZIP
+        shell: pwsh
+        run: ./installer/Build-Installer.ps1 -Runtime ${{ matrix.rid }}
+      - name: Verify installation, startup preference and removal
         shell: pwsh
         run: |
-          $process = Start-Process artifacts/app/Brightness.exe -PassThru
+          $setup = (Get-ChildItem "artifacts/${{ matrix.rid }}/*-Setup.exe").FullName
+          $directory = Join-Path $env:RUNNER_TEMP 'Brightness smoke test'
+          $app = Join-Path $directory 'Brightness.exe'
+          $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+
+          function Install-Brightness {
+            $process = Start-Process $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$directory`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Setup failed with exit code $($process.ExitCode)." }
+          }
+
+          Install-Brightness
+          $command = (Get-ItemProperty $runKey).Brightness
+          if ($command -ne "`"$app`"") { throw 'Setup did not register the installed app for startup.' }
+
+          $process = Start-Process $command.Trim('"') -PassThru
           try {
             if ($process.WaitForExit(5000)) {
               throw "Brightness exited during startup with status $($process.ExitCode)."
@@ -36,5 +54,24 @@ jobs:
           } finally {
             if (-not $process.HasExited) {
               Stop-Process -Id $process.Id
+              $process.WaitForExit()
             }
           }
+
+          Remove-ItemProperty $runKey Brightness
+          Install-Brightness
+          if ((Get-ItemProperty $runKey).Brightness) { throw 'Setup re-enabled startup during an upgrade.' }
+
+          Set-ItemProperty $runKey Brightness $command
+          $uninstaller = (Get-ChildItem "$directory/unins*.exe").FullName
+          $process = Start-Process $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or (Test-Path $app) -or (Get-ItemProperty $runKey).Brightness) {
+            throw 'Uninstall did not remove the app and its startup entry.'
+          }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: Brightness-${{ matrix.rid }}
+          path: |
+            artifacts/${{ matrix.rid }}/*-Setup.exe
+            artifacts/${{ matrix.rid }}/*.zip
+          if-no-files-found: error

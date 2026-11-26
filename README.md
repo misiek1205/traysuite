@@ -7,15 +7,21 @@ the sun icon opens a panel with a slider for each controllable display.
 
 ## Get started
 
-1. Download the ZIP for your Windows PC (x64 for most Intel and AMD PCs, ARM64
-   for Windows on ARM), extract it and run `Brightness.exe`. The portable
-   builds include the .NET runtime and run without administrator rights.
+1. Download and run the installer for your PC (x64 for most Intel and AMD
+   PCs, ARM64 for Windows on ARM). It installs for your Windows account and
+   includes the .NET runtime. You can also extract the portable ZIP and run
+   `Brightness.exe`.
 2. If the sun is under the arrow next to the clock, drag it into the visible
    notification area. Click it to open the panel and move a slider to change
    the brightness of that display.
-3. To keep the icon available after signing in, right-click the sun and choose
-   **Start with Windows**. Keep the executable in a permanent folder if you
-   turn this on.
+3. The installer enables **Start Brightness with Windows** by default.
+   Change this later with **Start with Windows** in the icon's right-click
+   menu. If you use the portable build, keep the executable in a permanent
+   folder before enabling this setting.
+
+To update an installed copy, choose **Exit** from the sun icon's right-click
+menu and run the new installer. It keeps your current startup preference.
+To uninstall, exit Brightness and remove it from Windows **Installed apps**.
 
 ## Display compatibility
 
@@ -39,7 +45,13 @@ dotnet build src/Brightness/Brightness.csproj -c Release
 dotnet run --project src/Brightness/Brightness.csproj
 ```
 
-The application runs on Windows 10/11. If you report a compatibility issue,
+To build the installer on Windows, install [Inno Setup 6.3+](https://jrsoftware.org/isdl.php)
+and run `./installer/Build-Installer.ps1 -Runtime win-x64` in PowerShell 7.
+Use `win-arm64` to build for Windows on ARM. The installer and portable
+ZIP appear under `artifacts/<runtime>`.
+
+The installer targets Windows 10 22H2 and Windows 11 on x64, and Windows 11
+on ARM64. If you report a compatibility issue,
 include your Windows version, monitor model, connection type, and whether
 DDC/CI and HDR are enabled. For a multi-monitor test, adjust two sliders in
 turn and confirm each changes only its own monitor. Reconnect a monitor and
@@ -51,14 +63,19 @@ verify that the panel refreshes the list.
 słońce obok zegara, a zobaczysz osobny suwak dla każdego obsługiwanego ekranu.
 Interfejs używa języka polskiego, gdy taki jest język systemu.
 
-1. Pobierz [ZIP z wydania](https://github.com/misiek1205/Brightness/releases)
-   (x64 dla typowego komputera z Intelem lub AMD, ARM64 dla Windows na ARM).
-   Wypakuj go i uruchom `Brightness.exe`. Paczka zawiera środowisko .NET.
+1. Pobierz [instalator](https://github.com/misiek1205/Brightness/releases)
+   (x64 dla komputerów z Intelem lub AMD, ARM64 dla Windows na ARM).
+   Instalator zawiera środowisko .NET i instaluje aplikację na Twoim koncie.
+   Możesz też wypakować przenośny ZIP i uruchomić `Brightness.exe`.
 2. Jeśli ikona słońca jest pod strzałką obok zegara, przeciągnij ją do widocznej
    części paska. Kliknij ją i przesuń suwak wybranego monitora.
-3. Jeśli chcesz uruchamiać aplikację przy logowaniu, kliknij słońce prawym
-   przyciskiem i zaznacz **Uruchamiaj z Windows**. Przechowuj plik EXE
-   w stałym folderze.
+3. Instalator domyślnie włącza uruchamianie w tle po zalogowaniu do Windows.
+   Możesz zmienić tę opcję w instalatorze lub później, klikając słońce prawym
+   przyciskiem i wybierając **Uruchamiaj z Windows**.
+
+Przed instalacją nowszej wersji wybierz **Zakończ** z menu ikony słońca.
+Aktualizacja zachowa ustawienie autostartu. Aplikację odinstalujesz przez
+**Zainstalowane aplikacje** w ustawieniach Windows.
 
 Monitory zewnętrzne korzystają z DDC/CI, a ekrany laptopów mogą korzystać
 z interfejsu WMI. Jeśli zewnętrzny monitor nie ma suwaka, sprawdź **DDC/CI**
