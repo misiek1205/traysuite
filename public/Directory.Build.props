@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <SelfContained>false</SelfContained>
-    <Version>0.6.0</Version>
+    <Version>2.0.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <Using Include="Suite.Core" Condition="'$(MSBuildProjectName)' != 'Suite.Core'" />

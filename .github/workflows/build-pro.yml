@@ -1,0 +1,85 @@
+name: Build private TraySuite packages
+
+on:
+  workflow_call:
+    inputs:
+      public_ref:
+        description: Public TraySuite commit or tag
+        required: true
+        type: string
+      private_base:
+        description: Optional HTTPS base URL of the private ZIP packages
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    if: github.event.repository.private == true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            runner: windows-2025
+          - rid: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          path: private
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: misiek1205/dimmli
+          ref: ${{ inputs.public_ref }}
+          persist-credentials: false
+          path: suite
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build Pro ZIPs
+        working-directory: suite
+        shell: pwsh
+        env:
+          PRIVATE_BASE: ${{ inputs.private_base }}
+        run: |
+          New-Item -ItemType Directory pro | Out-Null
+          Copy-Item -LiteralPath ../private/Apps -Destination pro/Apps -Recurse
+          $options = @()
+          if ($env:PRIVATE_BASE) { $options += @('--private-base', $env:PRIVATE_BASE) }
+          python installer/build.py build --scope pro --runtime ${{ matrix.rid }} @options
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pro-${{ matrix.rid }}
+          path: |
+            suite/artifacts/pro/${{ matrix.rid }}/*.zip
+            suite/artifacts/pro/${{ matrix.rid }}/manifest-${{ matrix.rid }}.json
+          if-no-files-found: error
+
+  manifest:
+    needs: packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: misiek1205/dimmli
+          ref: ${{ inputs.public_ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pro-win-x64
+          path: artifacts/pro/win-x64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pro-win-arm64
+          path: artifacts/pro/win-arm64
+      - run: python installer/build.py merge --scope pro --inputs artifacts/pro --output artifacts/private-release
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pro-manifest
+          path: artifacts/private-release/manifest-pro.json
+          if-no-files-found: error

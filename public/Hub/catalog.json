@@ -4,9 +4,14 @@
     {"id":"Dimmli","tier":"free","description_en":"Adjust monitor brightness","description_pl":"Regulacja jasności monitorów"},
     {"id":"Awake","tier":"free","description_en":"Keep the PC and screen awake","description_pl":"Blokada uśpienia komputera i ekranu"},
     {"id":"ClipPlain","tier":"free","description_en":"Clipboard history and plain-text paste","description_pl":"Historia schowka i wklejanie czystego tekstu"},
+    {"id":"PinWin","tier":"free","description_en":"Keep windows on top","description_pl":"Okna zawsze na wierzchu"},
+    {"id":"PowerFlip","tier":"free","description_en":"Switch power plans and limit CPU performance","description_pl":"Zmiana planu zasilania i limitu procesora"},
     {"id":"Sweep","tier":"pro","description_en":"Review and remove temporary files","description_pl":"Przegląd i usuwanie plików tymczasowych"},
     {"id":"Boost","tier":"pro","description_en":"Power and display settings for games","description_pl":"Ustawienia zasilania i jasności do gier"},
     {"id":"Pulse","tier":"pro","description_en":"CPU, memory, temperature and network","description_pl":"CPU, pamięć, temperatury i sieć"},
-    {"id":"Volly","tier":"pro","description_en":"Adjust app volume and switch outputs","description_pl":"Głośność aplikacji i przełączanie wyjść"}
+    {"id":"Volly","tier":"pro","description_en":"Adjust app volume and switch outputs","description_pl":"Głośność aplikacji i przełączanie wyjść"},
+    {"id":"SnapKit","tier":"pro","description_en":"Screen OCR and color picker","description_pl":"Rozpoznawanie tekstu z ekranu i pipeta kolorów"},
+    {"id":"Unlocker","tier":"pro","description_en":"Find and release file locks","description_pl":"Wykrywanie i zwalnianie blokad plików"},
+    {"id":"NetWatch","tier":"pro","description_en":"Network activity and firewall controls","description_pl":"Aktywność sieciowa i sterowanie zaporą"}
   ]
 }

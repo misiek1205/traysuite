@@ -88,7 +88,8 @@ public sealed class TrayContext : ApplicationContext
     private LicenseMonitor? licenseMonitor;
     private bool disposed;
 
-    public TrayContext(string id, string title, PopupWindow popup, Icon icon, bool trayVisible = true)
+    public TrayContext(string id, string title, PopupWindow popup, Icon icon, bool trayVisible = true,
+        ToolStripMenuItem? extraAction = null)
     {
         this.popup = popup;
         _ = popup.Handle;
@@ -105,6 +106,8 @@ public sealed class TrayContext : ApplicationContext
             }
         };
         menu.Opening += (_, _) => startup.Checked = Startup.IsEnabled(id, executable);
+        if (extraAction is not null)
+            menu.Items.Add(extraAction);
         menu.Items.Add(Texts.Get("Exit", "Zakończ")).Click += (_, _) => ExitThread();
         tray = new TrayIcon(icon, menu, title) { Visible = trayVisible };
         tray.Selected += popup.Toggle;

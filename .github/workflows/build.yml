@@ -40,7 +40,7 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build public solution independently
         run: dotnet build public/TraySuite.sln -c Release -warnaserror
-      - name: Build public ZIPs and Hub installer
+      - name: Build Free ZIPs and Hub installer from the catalog
         run: python installer/build.py build --scope public --runtime ${{ matrix.rid }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

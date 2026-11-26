@@ -2,8 +2,8 @@
 
 Modular tools for Windows 10 and 11, available in Free and Pro tiers. [Hub and free apps](public/README.md) · [Dimmli documentation](public/Apps/Dimmli/README.md)
 
-- `public/` contains Hub, Suite.Core, and the free modules Dimmli, Awake, and ClipPlain. You can copy this directory into a separate repository and build `public/TraySuite.sln` independently.
-- The root `TraySuite.sln` builds the public projects. Sweep, Boost, Pulse, and Volly are developed in a separate private repository that you can check out locally under the ignored `pro/` directory. Each app uses the shared .NET 10 Desktop Runtime for its architecture.
+- `public/` contains Hub, Suite.Core, and the free modules Dimmli, Awake, ClipPlain, PinWin, and PowerFlip. You can copy this directory into a separate repository and build `public/TraySuite.sln` independently.
+- The root `TraySuite.sln` builds the public projects. Sweep, Boost, Pulse, Volly, SnapKit, Unlocker, and NetWatch belong in the private checkout under the ignored `pro/` directory. Each app uses the shared .NET 10 Desktop Runtime for its architecture.
 
 ## Build packages
 
@@ -21,9 +21,9 @@ python installer/build.py merge --scope pro --inputs artifacts/pro --output arti
 
 Add `--no-setup` when building the public packages on Linux or when you need a portable Hub. ZIP archives, manifest fragments, and the portable Hub appear under `artifacts/public/<runtime>`. The Inno Setup installer checks for the matching Desktop Runtime version and architecture. If the runtime is missing, it downloads the Microsoft installer, verifies its pinned SHA-256 checksum, and asks for permission to run the system installer.
 
-The public workflow builds the installers and Free packages and merges their metadata into `manifest.json`. Run the private workflow manually in the private repository to generate Pro packages and `manifest-pro.json`. The public manifest leaves `download_url` and `sha256` empty for Pro packages. When merging the public manifest, pass `--pro-metadata artifacts/private-release/manifest-pro.json` to publish Pro package versions and sizes. Download URLs and checksums stay in the private manifest.
+The public workflow builds the installers and Free packages and merges their metadata into `manifest.json`. From a private repository with Pro projects under `Apps/`, call `misiek1205/dimmli/.github/workflows/build-pro.yml@<ref>` and set `public_ref` to the public commit or tag to build against. The workflow generates both sets of Pro ZIPs and `manifest-pro.json` in the private run. The public manifest leaves `download_url` and `sha256` empty for Pro packages. When merging the public manifest, pass `--pro-metadata artifacts/private-release/manifest-pro.json` to publish Pro package versions and sizes. Download URLs and checksums stay in the private manifest.
 
-By default, Hub fetches `manifest.json` and the Free packages from the latest GitHub release of `misiek1205/dimmli`. Upload the public manifest, both installers, and all six public ZIP archives to that release. Publish private release files through the Pro package source.
+By default, Hub fetches `manifest.json` and the Free packages from the latest GitHub release of `misiek1205/dimmli`. Upload the public manifest, both installers, and all Free ZIP archives to that release. Publish private release files through the Pro package source.
 
 ## Local development
 

@@ -26,7 +26,19 @@ internal static class Program
             var icon = (Icon)source.Clone();
             var window = new HubWindow(local, showTray);
             window.Disposed += (_, _) => icon.Dispose();
-            var context = new TrayContext("Hub", window.Text, window, icon, window.ShowTray);
+            var restart = new ToolStripMenuItem(Texts.Get("Restart Windows Explorer", "Restartuj Eksplorator Windows"));
+            restart.Click += async (_, _) =>
+            {
+                restart.Enabled = false;
+                try { await ExplorerRestart.Run(); }
+                catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
+                {
+                    MessageBox.Show(Texts.Get("Could not restart Explorer.", "Nie udało się ponownie uruchomić Eksploratora.")
+                        + Environment.NewLine + error.Message, window.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                finally { restart.Enabled = true; }
+            };
+            var context = new TrayContext("Hub", window.Text, window, icon, window.ShowTray, restart);
             window.TrayChanged += visible => context.TrayVisible = visible;
             window.ReadyToExit += context.ExitThread;
             return context;

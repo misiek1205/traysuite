@@ -105,6 +105,10 @@ def zip_package(directory, target):
 
 def build(scope, runtime, app_version, no_setup, private_base, configuration):
     catalog = load(CATALOG)
+    missing = [app["id"] for app in catalog["apps"] if app["tier"] == ("free" if scope == "public" else "pro")
+               and not (ROOT / scope / "Apps" / app["id"] / f"{app['id']}.csproj").is_file()]
+    if missing:
+        raise FileNotFoundError(f"Missing {scope} projects: {', '.join(missing)}")
     output = ARTIFACTS / scope / runtime
     output.mkdir(parents=True, exist_ok=True)
     manifest = {"schema_version": catalog["schema_version"], "apps": []}

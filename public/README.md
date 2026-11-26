@@ -4,10 +4,12 @@ Minimal system tray tools for Windows 10 and 11. Each tool runs as a standalone 
 
 | Project | Purpose |
 | --- | --- |
-| [Hub](Hub) | Install, launch, and update apps, manage startup, and activate Pro |
+| [Hub](Hub) | Install, launch, and update apps, manage startup, activate Pro, and restart Windows Explorer from the tray menu |
 | [Dimmli](Apps/Dimmli/README.md) | Monitor brightness, profiles, calibration offsets, and a CLI |
 | [Awake](Apps/Awake) | Prevents sleep for a set time or until a process exits |
 | [ClipPlain](Apps/ClipPlain) | Keeps a 10-entry text history in memory and pastes plain text with `Ctrl+Shift+V` |
+| [PinWin](Apps/PinWin) | Pins the foreground window with `Ctrl+Win+Space`, with a configurable shortcut and optional border |
+| [PowerFlip](Apps/PowerFlip) | Switches power plans and toggles the active plan's 99% processor limit on battery and AC |
 | [Suite.Core](Suite.Core) | Shared WinForms controls, system tray support, shortcuts, startup, IPC, and DPAPI-protected local licensing |
 
 ## Build and run

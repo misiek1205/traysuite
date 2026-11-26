@@ -21,6 +21,12 @@ public sealed class Hotkeys : NativeWindow, IDisposable
 
     public bool IsRegistered(int id) => registered.ContainsKey(id);
 
+    public void Unregister(int id)
+    {
+        if (registered.Remove(id))
+            UnregisterHotKey(Handle, id);
+    }
+
     public void Clear()
     {
         foreach (int id in registered.Keys)
