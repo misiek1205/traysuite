@@ -36,22 +36,42 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
 
     public async Task Stop(string id, CancellationToken token)
     {
-        if (!AppLifecycle.IsRunning(id))
-            return;
+        var candidates = Process.GetProcessesByName(id);
+        string executable = Executable(id);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromSeconds(12));
         try
         {
-            var reply = await AppLifecycle.Send(id, "--exit", timeout.Token);
-            if (!reply.Success)
-                throw new IOException(reply.Message);
-            while (AppLifecycle.IsRunning(id))
-                await Task.Delay(100, timeout.Token);
+            var installed = candidates.Where(process => MatchesExecutable(process, executable)).ToArray();
+            if (AppLifecycle.IsRunning(id))
+            {
+                var reply = await AppLifecycle.Send(id, "--exit", timeout.Token);
+                if (!reply.Success)
+                    throw new IOException(reply.Message);
+                while (AppLifecycle.IsRunning(id))
+                    await Task.Delay(100, timeout.Token);
+            }
+            foreach (var process in installed)
+                await process.WaitForExitAsync(timeout.Token);
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         {
             throw new IOException(Texts.Get("Close the running tool and retry.",
                 "Zamknij uruchomione narzędzie i spróbuj ponownie."));
+        }
+        finally
+        {
+            foreach (var process in candidates)
+                process.Dispose();
+        }
+    }
+
+    private static bool MatchesExecutable(Process process, string executable)
+    {
+        try { return string.Equals(process.MainModule?.FileName, executable, StringComparison.OrdinalIgnoreCase); }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            return false;
         }
     }
 
@@ -95,7 +115,7 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
             bool running = AppLifecycle.IsRunning(app.Id);
             await Stop(app.Id, token);
             if (Directory.Exists(destination))
-                Directory.Move(destination, backup);
+                await MoveInstalledDirectory(destination, backup, token);
             try { Directory.Move(payload, destination); }
             catch
             {
@@ -125,7 +145,7 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
         try
         {
             if (Directory.Exists(destination))
-                Directory.Move(destination, tombstone);
+                await MoveInstalledDirectory(destination, tombstone, token);
         }
         catch
         {
@@ -134,6 +154,23 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
             throw;
         }
         RemoveDirectory(tombstone);
+    }
+
+    private static async Task MoveInstalledDirectory(string source, string destination, CancellationToken token)
+    {
+        for (int retry = 0; ; retry++)
+        {
+            try
+            {
+                Directory.Move(source, destination);
+                return;
+            }
+            catch (IOException error) when (retry < 15 && (error.HResult & 0xffff) is 32 or 33)
+            {
+                // Windows can hold an image or scan handle briefly after the process exits.
+                await Task.Delay(200, token);
+            }
+        }
     }
 
     private FileStream Lock(string id) => new(Path.Combine(root, "." + id + ".lock"),
