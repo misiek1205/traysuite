@@ -142,13 +142,17 @@ try {
     Set-ItemProperty $runKey Hub "`"$hub`" --start"
     $uninstaller = (Get-ChildItem "$hubDir/unins*.exe").FullName
     Invoke-Exe $uninstaller "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$root\uninstall.log`""
-    if ((Test-Path $hub) -or (Get-ItemProperty $runKey -Name Hub -ErrorAction SilentlyContinue)) {
-        throw 'The Hub executable or its autostart entry survived uninstall.'
-    }
+    Wait-For 'the Hub executable to be removed' { !(Test-Path -LiteralPath $hub) } | Out-Null
+    Wait-For 'the Hub autostart value to be removed' {
+        $null -eq (Get-Item -LiteralPath $runKey).GetValue('Hub')
+    } | Out-Null
+    Write-Host "The installer removed the Hub and its autostart entry ($Runtime)."
 } catch {
     Write-Host $_.Exception.Message
     $log = Join-Path $root 'setup.log'
     if (Test-Path $log) { Get-Content -Tail 12 -LiteralPath $log | Write-Host }
+    $uninstallLog = Join-Path $root 'uninstall.log'
+    if (Test-Path $uninstallLog) { Get-Content -Tail 30 -LiteralPath $uninstallLog | Write-Host }
     $testedExecutables = (@('TraySuite.Hub') + @($testedModules) | ForEach-Object { [Regex]::Escape($_ + '.exe') }) -join '|'
     Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue |
         Where-Object { $_.ProviderName -in '.NET Runtime', 'Application Error' -and $_.Message -match $testedExecutables } |
