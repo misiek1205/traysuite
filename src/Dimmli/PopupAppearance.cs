@@ -33,6 +33,12 @@ internal sealed record PopupAppearance(Color Background, Color Card, Color Highl
 
     private static Color ColorOf(int rgb) => Color.FromArgb(unchecked((int)0xff000000) | rgb);
 
+    public static Color Tint(Color surface, Color accent, double amount) =>
+        Color.FromArgb(
+            (int)Math.Round(surface.R + (accent.R - surface.R) * amount),
+            (int)Math.Round(surface.G + (accent.G - surface.G) * amount),
+            (int)Math.Round(surface.B + (accent.B - surface.B) * amount));
+
     public static GraphicsPath Rounded(RectangleF rect, float radius)
     {
         var path = new GraphicsPath();
@@ -91,12 +97,14 @@ internal sealed class PopupButton : Button
     private readonly PopupGlyph? glyph;
     private readonly bool iconOnly;
     private readonly bool leftAligned;
+    private readonly bool inset;
 
-    public PopupButton(PopupGlyph? glyph = null, bool iconOnly = false, bool leftAligned = false)
+    public PopupButton(PopupGlyph? glyph = null, bool iconOnly = false, bool leftAligned = false, bool inset = false)
     {
         this.glyph = glyph;
         this.iconOnly = iconOnly;
         this.leftAligned = leftAligned;
+        this.inset = inset;
         SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         FlatStyle = FlatStyle.Flat;
         Cursor = Cursors.Hand;
@@ -119,10 +127,12 @@ internal sealed class PopupButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         var theme = PopupAppearance.Current;
-        Color fill = hovered && Enabled ? theme.Hover : theme.Card;
-        Color text = Enabled ? ForeColor : Color.FromArgb(160, theme.Muted);
+        Color surface = inset ? BackColor : theme.Card;
+        Color fill = hovered && Enabled ? PopupAppearance.Tint(surface, theme.Hover, .82) : surface;
+        Color text = Enabled ? ForeColor : theme.Muted;
+        Color border = Focused && ShowFocusCues ? theme.Accent : inset ? fill : theme.Border;
         PopupAppearance.Surface(e.Graphics, new RectangleF(.5f, .5f, Width - 1, Height - 1),
-            LogicalToDeviceUnits(iconOnly ? 11 : 9), fill, Focused && ShowFocusCues ? theme.Accent : theme.Border);
+            LogicalToDeviceUnits(iconOnly ? 10 : 9), fill, border);
 
         var bounds = ClientRectangle;
         int pad = LogicalToDeviceUnits(8);
@@ -146,6 +156,9 @@ internal sealed class PopupSlider : TrackBar
 {
     private const uint GetThumbRectangle = 0x0400 + 25;
     private const uint GetChannelRectangle = 0x0400 + 26;
+    private int dragStartX, dragStartValue, dragWidth;
+    private bool fineDrag;
+    public bool Dragging { get; private set; }
 
     public PopupSlider(bool transparent = false)
     {
@@ -181,6 +194,82 @@ internal sealed class PopupSlider : TrackBar
     {
         base.OnLostFocus(e);
         Invalidate();
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (!e.Shift || e.Control || e.Alt)
+            return;
+
+        int direction = e.KeyCode switch
+        {
+            Keys.Right or Keys.Up or Keys.PageUp => 1,
+            Keys.Left or Keys.Down or Keys.PageDown => -1,
+            _ => 0
+        };
+        if (direction == 0)
+            return;
+        e.SuppressKeyPress = true;
+        ChangeFromInput(Value + direction);
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        int x = unchecked((short)(long)message.LParam);
+        if (message.Msg is 0x0201 or 0x0203 && Enabled) // WM_LBUTTONDOWN / WM_LBUTTONDBLCLK
+        {
+            SendMessage(Handle, GetChannelRectangle, 0, out var channel);
+            SendMessage(Handle, GetThumbRectangle, 0, out var thumb);
+            dragWidth = channel.Right - channel.Left;
+            if (dragWidth > 0)
+            {
+                Focus();
+                Dragging = true;
+                Capture = true;
+                fineDrag = (ModifierKeys & Keys.Shift) != 0;
+                if (!fineDrag && (x < thumb.Left || x >= thumb.Right))
+                    ChangeFromInput(Minimum + (int)Math.Round((double)(x - channel.Left) * (Maximum - Minimum) / dragWidth));
+                dragStartX = x;
+                dragStartValue = Value;
+                OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, x, 0, 0));
+                return;
+            }
+        }
+        else if (message.Msg == 0x0200 && Dragging) // WM_MOUSEMOVE
+        {
+            bool fine = (ModifierKeys & Keys.Shift) != 0;
+            if (fine != fineDrag)
+            {
+                fineDrag = fine;
+                dragStartX = x;
+                dragStartValue = Value;
+            }
+            double unit = fine ? Math.Max(1, LogicalToDeviceUnits(6)) : (double)dragWidth / (Maximum - Minimum);
+            ChangeFromInput(dragStartValue + (int)Math.Truncate((x - dragStartX) / unit));
+            return;
+        }
+        else if (message.Msg == 0x0202 && Dragging) // WM_LBUTTONUP
+        {
+            Dragging = false;
+            Capture = false;
+            OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, x, 0, 0));
+            return;
+        }
+        else if (message.Msg == 0x0215) // WM_CAPTURECHANGED
+        {
+            Dragging = false;
+        }
+        base.WndProc(ref message);
+    }
+
+    private void ChangeFromInput(int value)
+    {
+        int adjusted = Math.Clamp(value, Minimum, Maximum);
+        if (adjusted == Value)
+            return;
+        Value = adjusted;
+        OnScroll(EventArgs.Empty);
     }
 
     protected override void OnPaint(PaintEventArgs e)

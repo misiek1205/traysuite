@@ -44,10 +44,64 @@ To uninstall, exit Dimmli and remove it from Windows **Installed apps**.
 | `Ctrl` + `Alt` + `B` | Open or close the panel |
 | `Ctrl` + `Alt` + `Page Up` / `Page Down` | Brighten or dim the controllable monitors by 5 percentage points |
 | `Ctrl` + `Alt` + `1` / `2` | Apply the saved Day or Evening profile |
+| `Ctrl` + `Alt` + `Shift` + `Page Up` / `Page Down` | Adjust shared brightness by one percentage point |
 
 Shortcuts work while Dimmli is running in the notification area. Open
 **Keys** in the panel to turn them off or check whether Windows made a
 combination available. The setting persists across restarts.
+Hold **Shift** while dragging a slider for finer 1-point movement, or
+while using its arrow or Page Up/Page Down keys.
+
+## Optional automation and calibration
+
+- **Automation** in the tray menu offers fixed hours or local sunrise and
+  sunset for the saved Day and Evening profiles. Enter approximate latitude
+  and longitude for solar scheduling. Dimmli uses the Windows time zone and
+  uses the fixed hours when a solar event is unavailable.
+- The same dialog contains **Fullscreen boost** and its brightness level.
+  It follows the foreground fullscreen window and restores the previous
+  level when that window leaves fullscreen. A scheduled profile can update
+  the level that will be restored. A manual brightness change to the
+  boosted display takes priority until the fullscreen session ends.
+- **Brightness calibration** is available by right-clicking a monitor card.
+  Set an offset from −20 to +20 percentage points. When any monitor has an
+  offset, shared adjustments use one reference level plus each monitor's
+  offset, clamped to 0–100%. Individual sliders and profiles use each
+  monitor's physical brightness percentage.
+
+Both automation options are off by default. The schedule arms a timer for
+its next transition, and fullscreen detection listens for foreground and
+window events while enabled.
+
+## Command line
+
+```powershell
+.\Dimmli.exe --list
+.\Dimmli.exe --profile "Wieczór"
+.\Dimmli.exe --brightness 50
+.\Dimmli.exe --monitor 1 --brightness 80
+```
+
+Use `--list` for the current monitor numbers. Commands go to the tray
+instance in the same Windows user session and start it if needed. They
+report whether the change was accepted into the queue. To get an exit code
+from the GUI executable in PowerShell scripts, use
+`Start-Process .\Dimmli.exe -ArgumentList '--brightness 50' -Wait -PassThru`
+and read its `ExitCode`. For Task Scheduler, run under the signed-in account
+in its interactive session.
+
+## Monitor names and tray actions
+
+- Right-click a monitor card and choose **Rename monitor**. An empty name
+  restores the original. Dimmli saves names for displays Windows can
+  identify individually.
+- Right-click the tray icon and choose **Check monitors** for a fresh
+  brightness read. Copy the report to share the result. It includes monitor
+  models and read methods and omits device identifiers and custom names.
+- Right-click the tray icon and enable **Scroll over tray icon to adjust
+  brightness** to change all controllable displays by five percentage
+  points per wheel notch. This is off by default. If the icon is hidden,
+  move it to the visible notification area for quick access.
 
 ## Display compatibility
 
@@ -124,6 +178,19 @@ Skróty globalne działają, gdy Dimmli jest w zasobniku. `Ctrl+Alt+B` otwiera
 lub zamyka panel, `Ctrl+Alt+PgUp/PgDn` zmienia jasność o 5 punktów
 procentowych, a `Ctrl+Alt+1/2` włącza zapisany profil Dzień lub Wieczór.
 W zakładce **Skróty** można je wyłączyć i sprawdzić dostępność kombinacji.
+Przytrzymaj **Shift** przy przeciąganiu suwaka lub dodaj go do skrótu
+`Ctrl+Alt+PgUp/PgDn`, aby regulować o 1 punkt procentowy.
+
+W menu ikony wybierz **Automatyzacja**, aby ustawić harmonogram profili
+lub jasność dla pełnego ekranu. Tryb harmonogramu słonecznego używa
+przybliżonych współrzędnych i strefy Windows. **Kalibrację jasności**
+znajdziesz pod prawym przyciskiem na karcie monitora.
+
+Kliknij kartę monitora prawym przyciskiem, aby nadać mu własną nazwę.
+Puste pole przywraca nazwę oryginalną. W menu ikony Dimmli **Sprawdź
+monitory** odczytuje jasność i umożliwia skopiowanie raportu. Opcja
+**Reguluj jasność rolką nad ikoną** jest domyślnie wyłączona. Po jej
+włączeniu jeden skok rolki zmienia jasność o 5 punktów procentowych.
 
 Monitory zewnętrzne korzystają z DDC/CI, a ekrany laptopów mogą korzystać
 z interfejsu WMI. Jeśli zewnętrzny monitor nie ma suwaka, sprawdź **DDC/CI**

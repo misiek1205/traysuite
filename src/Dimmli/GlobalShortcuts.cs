@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace Dimmli;
 
-internal enum ShortcutAction { Open = 1, Brighter, Dimmer, Day, Evening }
+internal enum ShortcutAction { Open = 1, Brighter, Dimmer, Day, Evening, BrighterFine, DimmerFine }
 
 internal sealed record Shortcut(ShortcutAction Action, Keys Key, string KeyLabel, string English, string Polish)
 {
@@ -46,7 +46,16 @@ internal sealed class GlobalShortcuts : NativeWindow, IDisposable
             foreach (var shortcut in Bindings)
                 if (RegisterHotKey(Handle, (int)shortcut.Action, ControlAltNoRepeat, (uint)shortcut.Key))
                     registered.Add(shortcut.Action);
+            RegisterFine(ShortcutAction.BrighterFine, Keys.PageUp);
+            RegisterFine(ShortcutAction.DimmerFine, Keys.PageDown);
         }
+    }
+
+    private void RegisterFine(ShortcutAction action, Keys key)
+    {
+        const uint shift = 0x0004;
+        if (RegisterHotKey(Handle, (int)action, ControlAltNoRepeat | shift, (uint)key))
+            registered.Add(action);
     }
 
     protected override void WndProc(ref Message message)

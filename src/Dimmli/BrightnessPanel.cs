@@ -19,16 +19,19 @@ internal sealed class BrightnessPanel : Form
     private readonly PopupButton guideButton;
     private readonly Label status = new();
     private Dictionary<BrightnessRow, int>? groupStart;
+    private double? calibrationBase;
+    private double? gestureCalibrationBase;
+    private bool groupUpdating;
     private bool masterKeyHeld;
     private bool overviewVisible;
     private bool guideVisible;
     private Rectangle workingArea;
     private Point anchor;
-    private const int HeaderHeight = 77;
-    private const int OverviewHeight = 214;
-    private const int RowHeight = 87;
-    private const int RowGap = 9;
-    private const int FooterHeight = 55;
+    private const int HeaderHeight = 72;
+    private const int OverviewHeight = 188;
+    private const int RowHeight = 78;
+    private const int RowGap = 8;
+    private const int FooterHeight = 46;
 
     public BrightnessPanel(Action refresh, Action<Profile> apply, Action<Profile> save, Action? toggleShortcuts = null)
     {
@@ -57,7 +60,7 @@ internal sealed class BrightnessPanel : Form
         var header = new TableLayoutPanel
         {
             ColumnCount = 3, RowCount = 2, Dock = DockStyle.Fill,
-            Padding = new Padding(20, 12, 20, 9), Margin = Padding.Empty
+            Padding = new Padding(20, 10, 20, 8), Margin = Padding.Empty
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -125,15 +128,15 @@ internal sealed class BrightnessPanel : Form
             Margin = Padding.Empty
         };
         masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
-        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 39));
-        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 24));
-        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 37));
+        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 102));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 26));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
         masterLayout.Controls.Add(CreateLabel(allDisplaysLabel, Theme.Text, PopupAppearance.ValueFont), 0, 0);
 
         offsetLabel.Dock = DockStyle.Fill;
-        offsetLabel.ForeColor = Theme.Accent;
-        offsetLabel.Font = PopupAppearance.LabelFont;
+        offsetLabel.ForeColor = Theme.Muted;
+        offsetLabel.Font = PopupAppearance.CaptionFont;
         offsetLabel.Margin = Padding.Empty;
         offsetLabel.TextAlign = ContentAlignment.MiddleLeft;
         masterLayout.Controls.Add(offsetLabel, 0, 1);
@@ -143,7 +146,7 @@ internal sealed class BrightnessPanel : Form
         master.AutoSize = false;
         master.Minimum = -100;
         master.Maximum = 100;
-        master.SmallChange = 1;
+        master.SmallChange = 5;
         master.LargeChange = 10;
         master.TickStyle = TickStyle.None;
         master.AccessibleName = allDisplaysLabel;
@@ -173,7 +176,7 @@ internal sealed class BrightnessPanel : Form
 
         var profiles = new TableLayoutPanel
         {
-            ColumnCount = 2, RowCount = 2, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 11)
+            ColumnCount = 2, RowCount = 2, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 9)
         };
         profiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         profiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
@@ -191,28 +194,39 @@ internal sealed class BrightnessPanel : Form
         (Button activate, Button store) MakeProfile(Profile profile, int column, PopupGlyph glyph,
             Color color, string label, string saveLabel)
         {
+            Color surface = SystemInformation.HighContrast ? Theme.Card : PopupAppearance.Tint(Theme.Card, color, .07);
+            var tile = new PopupCard(surface)
+            {
+                Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(5, 4, 5, 4),
+                Margin = column == 0 ? new Padding(0, 0, 4, 0) : new Padding(4, 0, 0, 0)
+            };
             var pair = new TableLayoutPanel
             {
-                ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill,
-                Margin = column == 0 ? new Padding(0, 0, 5, 0) : new Padding(5, 0, 0, 0)
+                ColumnCount = 3, RowCount = 1, Dock = DockStyle.Fill,
+                Margin = Padding.Empty, BackColor = surface
             };
             pair.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            pair.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
-            var activate = new PopupButton(glyph, leftAligned: true)
+            pair.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 1));
+            pair.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
+            pair.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            var activate = new PopupButton(glyph, leftAligned: true, inset: true)
             {
                 Text = label, ForeColor = color, Font = PopupAppearance.LabelFont,
-                Dock = DockStyle.Fill, Margin = new Padding(0, 0, 5, 0)
+                Dock = DockStyle.Fill, Margin = new Padding(0, 0, 3, 0), BackColor = surface
             };
-            var store = new PopupButton(PopupGlyph.Save, iconOnly: true)
+            var store = new PopupButton(PopupGlyph.Save, iconOnly: true, inset: true)
             {
-                Text = saveLabel, ForeColor = Theme.Muted, Dock = DockStyle.Fill, Margin = Padding.Empty
+                Text = saveLabel, ForeColor = Theme.Muted, Dock = DockStyle.Fill,
+                Margin = new Padding(3, 0, 0, 0), BackColor = surface
             };
             tips.SetToolTip(store, saveLabel);
             activate.Click += (_, _) => apply(profile);
             store.Click += (_, _) => save(profile);
             pair.Controls.Add(activate, 0, 0);
-            pair.Controls.Add(store, 1, 0);
-            profiles.Controls.Add(pair, column, 1);
+            pair.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = Theme.Border, Margin = new Padding(0, 5, 0, 5) }, 1, 0);
+            pair.Controls.Add(store, 2, 0);
+            tile.Controls.Add(pair);
+            profiles.Controls.Add(tile, column, 1);
             return (activate, store);
         }
 
@@ -230,7 +244,7 @@ internal sealed class BrightnessPanel : Form
         var footer = new TableLayoutPanel
         {
             ColumnCount = 2, Dock = DockStyle.Fill, Margin = Padding.Empty,
-            Padding = new Padding(20, 6, 20, 10)
+            Padding = new Padding(20, 4, 20, 9)
         };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
@@ -273,6 +287,8 @@ internal sealed class BrightnessPanel : Form
         ResizeAndPlace();
         Activate();
     }
+
+    public void Reopen() => Open(anchor);
 
     protected override CreateParams CreateParams
     {
@@ -328,19 +344,42 @@ internal sealed class BrightnessPanel : Form
         status.AccessibleName = message;
     }
 
-    public void SetDisplays(IReadOnlyList<Display> displays, Action<BrightnessRow, int> changed)
+    public void SetDisplays(IReadOnlyList<Display> displays, Action<BrightnessRow, int> changed,
+        IReadOnlyDictionary<string, string>? aliases = null, Action<Display>? rename = null,
+        IReadOnlyDictionary<string, int>? offsets = null, Action<Display>? calibrate = null)
     {
         ResetMaster();
+        calibrationBase = null;
         rows.SuspendLayout();
         while (rows.Controls.Count > 0)
             rows.Controls[0].Dispose();
         rows.RowStyles.Clear();
         rows.RowCount = 0;
 
+        var uniqueIds = displays.Where(display => display.Id is not null)
+            .GroupBy(display => display.Id!, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() == 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (Display display in displays)
         {
             var row = new BrightnessRow(display);
-            row.BrightnessChanged += changed;
+            if (display.Id is { } id && uniqueIds.Contains(id))
+            {
+                if (aliases?.TryGetValue(id, out var alias) == true)
+                    row.SetName(alias);
+                if (offsets?.TryGetValue(id, out int offset) == true)
+                    row.Offset = offset;
+                if (rename is not null || calibrate is not null)
+                    row.EnableOptions(rename is null ? null : () => rename(display),
+                        calibrate is null || display.SetBrightness is null ? null : () => calibrate(display));
+            }
+            row.BrightnessChanged += (sender, level) =>
+            {
+                if (!groupUpdating)
+                    calibrationBase = null;
+                changed(sender, level);
+            };
             row.TargetChanged += UpdateMeter;
             rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             rows.Controls.Add(row, 0, rows.RowCount++);
@@ -370,8 +409,31 @@ internal sealed class BrightnessPanel : Form
         ResizeAndPlace();
     }
 
+    public void UpdateMonitorName(string id, string alias)
+    {
+        var matching = rows.Controls.OfType<BrightnessRow>()
+            .Where(row => string.Equals(row.Display.Id, id, StringComparison.OrdinalIgnoreCase))
+            .Take(2).ToArray();
+        if (matching.Length == 1)
+            matching[0].SetName(alias);
+    }
+
     private IEnumerable<BrightnessRow> ControllableRows =>
-        rows.Controls.OfType<BrightnessRow>().Where(row => row.Display.SetBrightness is not null);
+        DisplayRows.Where(row => row.Display.SetBrightness is not null);
+
+    public IEnumerable<BrightnessRow> DisplayRows => rows.Controls.OfType<BrightnessRow>();
+
+    public void UpdateMonitorOffset(string id, int offset)
+    {
+        var matching = DisplayRows.Where(row => string.Equals(row.Display.Id, id, StringComparison.OrdinalIgnoreCase))
+            .Take(2).ToArray();
+        if (matching.Length == 1)
+        {
+            matching[0].Offset = offset;
+            calibrationBase = null;
+            ResetMaster();
+        }
+    }
 
     public Dictionary<string, BrightnessRow> ProfileRows() =>
         ControllableRows.Where(row => row.Display.Id is not null)
@@ -408,8 +470,7 @@ internal sealed class BrightnessPanel : Form
     public void ShiftBy(int delta)
     {
         ResetMaster();
-        foreach (var row in ControllableRows)
-            row.SetTarget(Math.Clamp(row.Target + delta, 0, 100));
+        ApplyShift(ControllableRows.ToDictionary(row => row, row => row.Target), delta, calibrationBase);
     }
 
     private void UpdateMeter()
@@ -419,21 +480,51 @@ internal sealed class BrightnessPanel : Form
 
     private void ShiftDisplays()
     {
-        groupStart ??= ControllableRows.ToDictionary(row => row, row => row.Target);
+        if (groupStart is null)
+        {
+            groupStart = ControllableRows.ToDictionary(row => row, row => row.Target);
+            gestureCalibrationBase = calibrationBase;
+        }
         int shift = master.Value;
+        offsetLabel.ForeColor = Theme.Accent;
         offsetLabel.Text = shift.ToString("+0;-0;0") + " " + Texts.Get("pp", "p.p.");
-        foreach (var (row, start) in groupStart)
-            row.SetTarget(Math.Clamp(start + shift, 0, 100));
-        if (!masterKeyHeld && (Control.MouseButtons & MouseButtons.Left) == 0)
+        ApplyShift(groupStart, shift, gestureCalibrationBase);
+        if (!masterKeyHeld && !master.Dragging && (Control.MouseButtons & MouseButtons.Left) == 0)
             ResetMaster();
+    }
+
+    private void ApplyShift(Dictionary<BrightnessRow, int> levels, int shift, double? reference)
+    {
+        groupUpdating = true;
+        try
+        {
+            if (levels.Keys.Any(row => row.Offset != 0))
+            {
+                double start = reference ?? levels.Average(pair => pair.Value - pair.Key.Offset);
+                calibrationBase = Math.Clamp(start + shift, 0, 100);
+                foreach (var row in levels.Keys)
+                    row.SetTarget(Math.Clamp((int)Math.Round(calibrationBase.Value + row.Offset), 0, 100));
+            }
+            else
+            {
+                foreach (var (row, start) in levels)
+                    row.SetTarget(Math.Clamp(start + shift, 0, 100));
+            }
+        }
+        finally
+        {
+            groupUpdating = false;
+        }
     }
 
     private void ResetMaster()
     {
         groupStart = null;
+        gestureCalibrationBase = null;
         masterKeyHeld = false;
         master.Value = 0;
-        offsetLabel.Text = "0 " + Texts.Get("pp", "p.p.");
+        offsetLabel.ForeColor = Theme.Muted;
+        offsetLabel.Text = Texts.Get("Drag to adjust together", "Przeciągnij, aby zmienić jasność");
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -452,10 +543,14 @@ internal sealed class BrightnessPanel : Form
 internal sealed class BrightnessRow : PopupCard
 {
     private readonly PopupSlider slider;
+    private readonly Label name;
     private readonly Label valueLabel;
     public Display Display { get; }
     public int Confirmed { get; private set; }
     public int Target => slider.Value;
+    public string DisplayName => name.Text;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public int Offset { get; set; }
     public event Action<BrightnessRow, int>? BrightnessChanged;
     public event Action? TargetChanged;
 
@@ -465,9 +560,9 @@ internal sealed class BrightnessRow : PopupCard
         Confirmed = Math.Clamp(display.Brightness, 0, 100);
         var theme = PopupAppearance.Current;
         BackColor = theme.Background;
-        Height = 87;
+        Height = 78;
         Dock = DockStyle.Top;
-        Margin = new Padding(0, 0, 0, 9);
+        Margin = new Padding(0, 0, 0, 8);
         Padding = new Padding(14, 7, 15, 7);
 
         var card = new TableLayoutPanel
@@ -483,7 +578,7 @@ internal sealed class BrightnessRow : PopupCard
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         Controls.Add(card);
-        var name = new Label
+        name = new Label
         {
             Text = display.Name,
             Font = PopupAppearance.LabelFont,
@@ -513,7 +608,7 @@ internal sealed class BrightnessRow : PopupCard
             Maximum = 100,
             Value = Confirmed,
             TickStyle = TickStyle.None,
-            SmallChange = 1,
+            SmallChange = 5,
             LargeChange = 10,
             AutoSize = false,
             Dock = DockStyle.Fill,
@@ -547,6 +642,27 @@ internal sealed class BrightnessRow : PopupCard
             BrightnessChanged?.Invoke(this, slider.Value);
             TargetChanged?.Invoke();
         };
+    }
+
+    public void SetName(string alias)
+    {
+        name.Text = alias.Length == 0 ? Display.Name : alias;
+        if (!slider.IsDisposed)
+            slider.AccessibleName = Texts.Get("Brightness", "Jasność") + " — " + name.Text;
+    }
+
+    public void EnableOptions(Action? rename, Action? calibrate)
+    {
+        var menu = new ContextMenuStrip();
+        if (rename is not null)
+            menu.Items.Add(Texts.Get("Rename monitor…", "Zmień nazwę monitora…")).Click += (_, _) => rename();
+        if (calibrate is not null)
+            menu.Items.Add(Texts.Get("Brightness calibration…", "Kalibracja jasności…")).Click += (_, _) => calibrate();
+        ContextMenuStrip = menu;
+        name.ContextMenuStrip = menu;
+        if (!slider.IsDisposed)
+            slider.ContextMenuStrip = menu;
+        Disposed += (_, _) => menu.Dispose();
     }
 
     public void SetTarget(int value)

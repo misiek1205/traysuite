@@ -29,7 +29,7 @@ jobs:
       - name: Build installer and portable ZIP
         shell: pwsh
         run: ./installer/Build-Installer.ps1 -Runtime ${{ matrix.rid }}
-      - name: Verify installation, startup preference and removal
+      - name: Verify installation, CLI, startup preference and removal
         shell: pwsh
         run: |
           $setup = (Get-ChildItem "artifacts/${{ matrix.rid }}/*-Setup.exe").FullName
@@ -42,6 +42,19 @@ jobs:
             if ($process.ExitCode -ne 0) { throw "Setup failed with exit code $($process.ExitCode)." }
           }
 
+          function Test-DimmliCommand($arguments, $expectedExit) {
+            $client = Start-Process $app -ArgumentList $arguments -PassThru
+            try {
+              if (!$client.WaitForExit(30000)) { throw "Dimmli command timed out ($arguments)." }
+              if ($client.ExitCode -ne $expectedExit) {
+                throw "Dimmli command ($arguments) returned $($client.ExitCode) instead of $expectedExit."
+              }
+            } finally {
+              if (!$client.HasExited) { Stop-Process -Id $client.Id }
+              $client.Dispose()
+            }
+          }
+
           Install-Dimmli
           $command = (Get-ItemProperty $runKey).Brightness
           if ($command -ne "`"$app`"") { throw 'Setup did not register the installed app for startup.' }
@@ -51,6 +64,8 @@ jobs:
             if ($process.WaitForExit(5000)) {
               throw "Dimmli exited during startup with status $($process.ExitCode)."
             }
+            Test-DimmliCommand '--list' 0
+            Test-DimmliCommand '--brightness 101' 2
           } finally {
             if (-not $process.HasExited) {
               Stop-Process -Id $process.Id

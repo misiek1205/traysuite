@@ -4,7 +4,10 @@ using static Dimmli.MonitorNative;
 
 namespace Dimmli;
 
-internal sealed record Display(string Name, int Brightness, Func<int, int?>? SetBrightness, string? Id = null);
+internal enum BrightnessReadMethod { None, DdcNoReply, DdcCi, DdcVcp, Wmi }
+
+internal sealed record Display(string Name, int Brightness, Func<int, int?>? SetBrightness, string? Id = null,
+    BrightnessReadMethod ReadMethod = BrightnessReadMethod.None, string? ScreenDevice = null);
 
 internal sealed class MonitorService : IDisposable
 {
@@ -24,7 +27,7 @@ internal sealed class MonitorService : IDisposable
 
         foreach (nint monitor in logicalMonitors)
         {
-            var devices = GetDisplayDevices(monitor);
+            var devices = GetDisplayDevices(monitor, out var screenDevice);
             PhysicalMonitor[] physical = [];
             if (GetNumberOfPhysicalMonitorsFromHMONITOR(monitor, out uint count) && count > 0)
             {
@@ -37,10 +40,12 @@ internal sealed class MonitorService : IDisposable
             {
                 foreach (DisplayDevice device in devices)
                 {
-                    if (panels.Remove(InterfaceToInstance(device.Id), out Display? panel))
-                        displays.Add(panel with { Name = NameOrDefault(device.Description) });
+                    string id = InterfaceToInstance(device.Id);
+                    if (panels.Remove(id, out Display? panel))
+                        displays.Add(panel with { Name = NameOrDefault(device.Description), ScreenDevice = screenDevice });
                     else
-                        displays.Add(new Display(NameOrDefault(device.Description), 0, null));
+                        displays.Add(new Display(NameOrDefault(device.Description), 0, null, id.Length == 0 ? null : id,
+                            ScreenDevice: screenDevice));
                 }
                 continue;
             }
@@ -59,13 +64,13 @@ internal sealed class MonitorService : IDisposable
                 DisplayDevice? match = matchingDevices.Length == 1 ? matchingDevices[0] : null;
                 if (match is { } device && panels.Remove(InterfaceToInstance(device.Id), out Display? panel))
                 {
-                    displays.Add(panel with { Name = NameOrDefault(device.Description) });
+                    displays.Add(panel with { Name = NameOrDefault(device.Description), ScreenDevice = screenDevice });
                     continue;
                 }
 
                 string name = NameOrDefault(screen.Description, match?.Description);
                 string id = InterfaceToInstance(match?.Id);
-                displays.Add(DiscoverDdc(screen.Handle, name) with { Id = id.Length == 0 ? null : id });
+                displays.Add(DiscoverDdc(screen.Handle, name) with { Id = id.Length == 0 ? null : id, ScreenDevice = screenDevice });
             }
         }
 
@@ -83,11 +88,12 @@ internal sealed class MonitorService : IDisposable
                 if (SetMonitorBrightness(handle, value))
                     return ToPercent(value, minimum, maximum);
                 return DiscoverVcpWriter(handle, out _)?.Invoke(percent);
-            });
+            }, ReadMethod: BrightnessReadMethod.DdcCi);
         }
 
         var write = DiscoverVcpWriter(handle, out int brightness);
-        return new Display(name, brightness, write);
+        return new Display(name, brightness, write,
+            ReadMethod: write is null ? BrightnessReadMethod.DdcNoReply : BrightnessReadMethod.DdcVcp);
     }
 
     private static Func<int, int?>? DiscoverVcpWriter(nint handle, out int brightness)
@@ -141,7 +147,7 @@ internal sealed class MonitorService : IDisposable
                     int suffix = instance.LastIndexOf('_');
                     string id = suffix > instance.LastIndexOf('\\') ? instance[..suffix] : instance;
                     panels[id] = new Display(Texts.Get("Built-in display", "Ekran wbudowany"), current,
-                        percent => SetPanelBrightness(path, percent, levels), id.ToUpperInvariant());
+                        percent => SetPanelBrightness(path, percent, levels), id.ToUpperInvariant(), BrightnessReadMethod.Wmi);
                 }
             }
         }
@@ -174,14 +180,16 @@ internal sealed class MonitorService : IDisposable
     }
 
     private static bool IsWmiError(Exception error) =>
-        error is ManagementException or COMException or UnauthorizedAccessException;
+        error is ManagementException or COMException or UnauthorizedAccessException or PlatformNotSupportedException;
 
-    private static List<DisplayDevice> GetDisplayDevices(nint monitor)
+    private static List<DisplayDevice> GetDisplayDevices(nint monitor, out string? screenDevice)
     {
         var devices = new List<DisplayDevice>();
+        screenDevice = null;
         var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
         if (!GetMonitorInfo(monitor, ref info))
             return devices;
+        screenDevice = info.Device;
 
         for (uint index = 0; ; index++)
         {
