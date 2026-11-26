@@ -1,19 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project>
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Product>Dimmli</Product>
-    <Description>Windows monitor brightness control from the system tray</Description>
-    <ApplicationIcon>Sun.ico</ApplicationIcon>
+    <SelfContained>false</SelfContained>
     <Version>0.6.0</Version>
   </PropertyGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Sun.ico" LogicalName="Dimmli.Sun.ico" />
-    <PackageReference Include="System.Management" Version="10.0.15" />
+    <Using Include="Suite.Core" Condition="'$(MSBuildProjectName)' != 'Suite.Core'" />
   </ItemGroup>
 </Project>

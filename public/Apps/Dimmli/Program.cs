@@ -11,15 +11,20 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length > 0)
+        string mode = args.FirstOrDefault() ?? "--start";
+        if (args.Length > 1 || mode is not ("--start" or "--open" or "--exit"))
             return RunCommand(args);
 
         using var instance = new Mutex(true, InstanceName, out bool firstInstance);
         if (!firstInstance)
+            return mode == "--start" ? 0 : AppLifecycle.Forward("Dimmli", mode);
+        if (mode == "--exit")
             return 0;
 
         ApplicationConfiguration.Initialize();
         using var app = new TrayApplication();
+        if (mode == "--open")
+            app.OpenFromLauncher();
         Application.Run(app);
         return 0;
     }
@@ -45,13 +50,15 @@ internal static class Program
             using (var probe = new Mutex(false, InstanceName, out start)) { }
             if (start)
             {
+                if (command.ReleaseGame)
+                    return 0;
                 if (Environment.ProcessPath is null)
                     return 1;
                 using var child = Process.Start(new ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = false });
             }
 
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(22));
-            var reply = CommandPipe.Send(command, deadline.Token).GetAwaiter().GetResult();
+            var reply = CommandPipe<BrightnessCommand>.Send("Dimmli", command, deadline.Token).GetAwaiter().GetResult();
             (reply.Success ? Console.Out : Console.Error).WriteLine(reply.Message);
             return reply.Success ? 0 : 1;
         }
