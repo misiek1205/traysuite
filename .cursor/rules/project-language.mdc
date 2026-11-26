@@ -1,0 +1,6 @@
+---
+description: Use English for all project work
+alwaysApply: true
+---
+
+Follow the project language rules in [AGENTS.md](../../AGENTS.md). For example, write README updates in English even when the request is written in Polish.

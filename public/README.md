@@ -1,19 +1,19 @@
 # TraySuite
 
-Minimalistyczne narzędzia w zasobniku Windows 10/11. Każde działa jako samodzielna aplikacja WinForms, z polskim i angielskim interfejsem oraz jasnym i ciemnym motywem zależnym od ustawień Windows przy uruchomieniu.
+Minimal system tray tools for Windows 10 and 11. Each tool runs as a standalone WinForms app with English and Polish interfaces and uses the Windows light or dark theme at launch.
 
-| Projekt | Funkcja |
+| Project | Purpose |
 | --- | --- |
-| [Hub](Hub) | Instalacja, uruchamianie, aktualizacje, autostart i aktywacja Pro |
-| [Dimmli](Apps/Dimmli/README.md) | Jasność monitorów, profile, offsety i CLI |
-| [Awake](Apps/Awake) | Blokada uśpienia na określony czas lub do zakończenia procesu |
-| [ClipPlain](Apps/ClipPlain) | Historia 10 wpisów tekstowych w pamięci i czyste wklejanie przez `Ctrl+Shift+V` |
-| [Suite.Core](Suite.Core) | Kontrolki WinForms, zasobnik, skróty, autostart, IPC i lokalna licencja DPAPI |
+| [Hub](Hub) | Install, launch, and update apps, manage startup, and activate Pro |
+| [Dimmli](Apps/Dimmli/README.md) | Monitor brightness, profiles, calibration offsets, and a CLI |
+| [Awake](Apps/Awake) | Prevents sleep for a set time or until a process exits |
+| [ClipPlain](Apps/ClipPlain) | Keeps a 10-entry text history in memory and pastes plain text with `Ctrl+Shift+V` |
+| [Suite.Core](Suite.Core) | Shared WinForms controls, system tray support, shortcuts, startup, IPC, and DPAPI-protected local licensing |
 
-## Kompilacja i uruchomienie
+## Build and run
 
-W katalogu zawierającym ten plik uruchom `dotnet build TraySuite.sln -c Release` z SDK .NET 10. Na Windows aplikacje wymagają Desktop Runtime .NET 10 dla swojej architektury. Dystrybucja obejmuje Windows 10 22H2 i Windows 11 na x64 oraz Windows 11 na ARM64.
+From the directory containing this file, run `dotnet build TraySuite.sln -c Release` with the .NET 10 SDK. On Windows, the apps require the .NET 10 Desktop Runtime for their architecture. Builds support Windows 10 22H2 and Windows 11 on x64, and Windows 11 on ARM64.
 
-Wypakuj całą paczkę modułu przed uruchomieniem. `--open` pokazuje panel, `--start` uruchamia sam zasobnik, a `--exit` zamyka uruchomioną instancję. Dimmli zachowuje uruchomienie do zasobnika po wywołaniu bez argumentów. Pozostałe narzędzia otwierają panel.
+Extract the entire module package before launching it. `--open` shows the panel, `--start` starts the app in the system tray, and `--exit` closes the running instance. With no arguments, Dimmli starts in the tray and the other tools open their panels.
 
-[Licencja MIT](LICENSE)
+[MIT license](LICENSE)
