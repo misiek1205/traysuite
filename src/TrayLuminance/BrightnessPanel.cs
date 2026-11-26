@@ -1,4 +1,4 @@
-namespace Brightness;
+namespace TrayLuminance;
 
 internal sealed class BrightnessPanel : Form
 {
@@ -12,7 +12,7 @@ internal sealed class BrightnessPanel : Form
 
     public BrightnessPanel(Action refresh)
     {
-        Text = "Brightness";
+        Text = "TrayLuminance";
         ShowInTaskbar = false;
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual;

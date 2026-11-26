@@ -1,10 +1,12 @@
 using Microsoft.Win32;
 
-namespace Brightness;
+namespace TrayLuminance;
 
 internal sealed class TrayApplication : ApplicationContext
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    // Keep the original Run value so the installer can adopt an existing portable setup.
+    private const string StartupValueName = "Brightness";
     private readonly NotifyIcon tray;
     private readonly ContextMenuStrip menu = new();
     private readonly Icon icon;
@@ -22,7 +24,7 @@ internal sealed class TrayApplication : ApplicationContext
 
     public TrayApplication()
     {
-        using var resource = typeof(TrayApplication).Assembly.GetManifestResourceStream("Brightness.Sun.ico")!;
+        using var resource = typeof(TrayApplication).Assembly.GetManifestResourceStream("TrayLuminance.Sun.ico")!;
         using var sourceIcon = new Icon(resource);
         icon = (Icon)sourceIcon.Clone();
         panel = new BrightnessPanel(RequestRefresh);
@@ -46,7 +48,7 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(Texts.Get("Exit", "Zakończ")).Click += (_, _) => Exit();
 
-        tray = new NotifyIcon { Icon = icon, Text = "Brightness", ContextMenuStrip = menu, Visible = true };
+        tray = new NotifyIcon { Icon = icon, Text = "TrayLuminance", ContextMenuStrip = menu, Visible = true };
         tray.MouseClick += (_, args) =>
         {
             if (args.Button != MouseButtons.Left)
@@ -180,7 +182,7 @@ internal sealed class TrayApplication : ApplicationContext
     private static bool StartsWithWindows()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-        return key?.GetValue("Brightness") is string;
+        return key?.GetValue(StartupValueName) is string;
     }
 
     private static void ToggleStartup(bool enabled)
@@ -189,14 +191,14 @@ internal sealed class TrayApplication : ApplicationContext
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKey);
             if (enabled)
-                key.DeleteValue("Brightness", throwOnMissingValue: false);
+                key.DeleteValue(StartupValueName, throwOnMissingValue: false);
             else
-                key.SetValue("Brightness", $"\"{Application.ExecutablePath}\"");
+                key.SetValue(StartupValueName, $"\"{Application.ExecutablePath}\"");
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             MessageBox.Show(Texts.Get("Could not update Windows startup settings.",
-                "Nie udało się zmienić ustawień autostartu."), "Brightness", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "Nie udało się zmienić ustawień autostartu."), "TrayLuminance", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

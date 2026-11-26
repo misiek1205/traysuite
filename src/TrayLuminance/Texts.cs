@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Brightness;
+namespace TrayLuminance;
 
 internal static class Texts
 {

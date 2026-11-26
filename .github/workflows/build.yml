@@ -33,23 +33,23 @@ jobs:
         shell: pwsh
         run: |
           $setup = (Get-ChildItem "artifacts/${{ matrix.rid }}/*-Setup.exe").FullName
-          $directory = Join-Path $env:RUNNER_TEMP 'Brightness smoke test'
-          $app = Join-Path $directory 'Brightness.exe'
+          $directory = Join-Path $env:RUNNER_TEMP 'TrayLuminance smoke test'
+          $app = Join-Path $directory 'TrayLuminance.exe'
           $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
-          function Install-Brightness {
+          function Install-TrayLuminance {
             $process = Start-Process $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$directory`"" -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Setup failed with exit code $($process.ExitCode)." }
           }
 
-          Install-Brightness
+          Install-TrayLuminance
           $command = (Get-ItemProperty $runKey).Brightness
           if ($command -ne "`"$app`"") { throw 'Setup did not register the installed app for startup.' }
 
           $process = Start-Process $command.Trim('"') -PassThru
           try {
             if ($process.WaitForExit(5000)) {
-              throw "Brightness exited during startup with status $($process.ExitCode)."
+              throw "TrayLuminance exited during startup with status $($process.ExitCode)."
             }
           } finally {
             if (-not $process.HasExited) {
@@ -59,7 +59,7 @@ jobs:
           }
 
           Remove-ItemProperty $runKey Brightness
-          Install-Brightness
+          Install-TrayLuminance
           if ((Get-ItemProperty $runKey).Brightness) { throw 'Setup re-enabled startup during an upgrade.' }
 
           Set-ItemProperty $runKey Brightness $command
@@ -70,7 +70,7 @@ jobs:
           }
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: Brightness-${{ matrix.rid }}
+          name: TrayLuminance-${{ matrix.rid }}
           path: |
             artifacts/${{ matrix.rid }}/*-Setup.exe
             artifacts/${{ matrix.rid }}/*.zip

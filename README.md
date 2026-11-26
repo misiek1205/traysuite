@@ -1,31 +1,33 @@
-# Brightness
+# TrayLuminance · Windows monitor brightness control
 
-Adjust hardware brightness from the Windows notification area. One click on
-the sun icon opens a panel with a slider for each controllable display.
+TrayLuminance is an open-source brightness controller for Windows 10 and 11.
+Click the sun icon in the system tray to adjust each monitor independently.
+It uses DDC/CI for compatible external monitors and Windows WMI for built-in
+laptop displays.
 
-[Po polsku](#po-polsku) · [Download](https://github.com/misiek1205/Brightness/releases) · [MIT license](LICENSE)
+[Download for Windows x64 or ARM64](https://github.com/misiek1205/trayluminance/releases/latest) · [Po polsku](#po-polsku) · [MIT license](LICENSE)
 
 ## Get started
 
 1. Download and run the installer for your PC (x64 for most Intel and AMD
    PCs, ARM64 for Windows on ARM). It installs for your Windows account and
    includes the .NET runtime. You can also extract the portable ZIP and run
-   `Brightness.exe`.
+   `TrayLuminance.exe`.
 2. If the sun is under the arrow next to the clock, drag it into the visible
    notification area. Click it to open the panel and move a slider to change
    the brightness of that display.
-3. The installer enables **Start Brightness with Windows** by default.
+3. The installer enables **Start TrayLuminance with Windows** by default.
    Change this later with **Start with Windows** in the icon's right-click
    menu. If you use the portable build, keep the executable in a permanent
    folder before enabling this setting.
 
 To update an installed copy, choose **Exit** from the sun icon's right-click
 menu and run the new installer. It keeps your current startup preference.
-To uninstall, exit Brightness and remove it from Windows **Installed apps**.
+To uninstall, exit TrayLuminance and remove it from Windows **Installed apps**.
 
 ## Display compatibility
 
-- **External monitors** use DDC/CI over the display connection. Brightness
+- **External monitors** use DDC/CI over the display connection. TrayLuminance
   tries the Windows monitor brightness API and the MCCS luminance feature
   (VCP `0x10`). Enable DDC/CI in the monitor's own menu if it has that setting.
 - **Built-in displays** use the Windows WMI brightness interface when the
@@ -41,8 +43,8 @@ To uninstall, exit Brightness and remove it from Windows **Installed apps**.
 Use the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```powershell
-dotnet build src/Brightness/Brightness.csproj -c Release
-dotnet run --project src/Brightness/Brightness.csproj
+dotnet build src/TrayLuminance/TrayLuminance.csproj -c Release
+dotnet run --project src/TrayLuminance/TrayLuminance.csproj
 ```
 
 To build the installer on Windows, install [Inno Setup 6.3+](https://jrsoftware.org/isdl.php)
@@ -51,22 +53,32 @@ Use `win-arm64` to build for Windows on ARM. The installer and portable
 ZIP appear under `artifacts/<runtime>`.
 
 The installer targets Windows 10 22H2 and Windows 11 on x64, and Windows 11
-on ARM64. If you report a compatibility issue,
-include your Windows version, monitor model, connection type, and whether
-DDC/CI and HDR are enabled. For a multi-monitor test, adjust two sliders in
-turn and confirm each changes only its own monitor. Reconnect a monitor and
-verify that the panel refreshes the list.
+on ARM64.
+
+## Test monitor compatibility
+
+You can cross-build from Linux with the .NET 10 SDK. GitHub Actions verifies
+installation, startup registration, upgrades and removal on Windows x64 and
+ARM64. A Windows VM with a virtual display is suitable for checking the
+installer, system tray and panel. Wine's monitor configuration APIs have
+no DDC/CI implementation in the upstream DXVA2 library.
+
+To verify a physical monitor, connect it to a Windows PC and adjust each
+slider in turn. Confirm that it changes only its own monitor. Reconnect a
+monitor and check that the panel refreshes the list. Reports are easiest to
+reproduce with the Windows version, monitor model, connection type and
+DDC/CI and HDR settings.
 
 ## Po polsku
 
-**Brightness** zmienia sprzętową jasność monitorów w Windows 10/11. Kliknij
+**TrayLuminance** zmienia sprzętową jasność monitorów w Windows 10/11. Kliknij
 słońce obok zegara, a zobaczysz osobny suwak dla każdego obsługiwanego ekranu.
 Interfejs używa języka polskiego, gdy taki jest język systemu.
 
-1. Pobierz [instalator](https://github.com/misiek1205/Brightness/releases)
+1. Pobierz [instalator](https://github.com/misiek1205/trayluminance/releases/latest)
    (x64 dla komputerów z Intelem lub AMD, ARM64 dla Windows na ARM).
    Instalator zawiera środowisko .NET i instaluje aplikację na Twoim koncie.
-   Możesz też wypakować przenośny ZIP i uruchomić `Brightness.exe`.
+   Możesz też wypakować przenośny ZIP i uruchomić `TrayLuminance.exe`.
 2. Jeśli ikona słońca jest pod strzałką obok zegara, przeciągnij ją do widocznej
    części paska. Kliknij ją i przesuń suwak wybranego monitora.
 3. Instalator domyślnie włącza uruchamianie w tle po zalogowaniu do Windows.

@@ -1,8 +1,8 @@
 using System.Management;
 using System.Runtime.InteropServices;
-using static Brightness.MonitorNative;
+using static TrayLuminance.MonitorNative;
 
-namespace Brightness;
+namespace TrayLuminance;
 
 internal sealed record Display(string Name, int Brightness, Func<int, int?>? SetBrightness);
 

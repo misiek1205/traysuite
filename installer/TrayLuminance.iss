@@ -2,12 +2,12 @@
 
 [Setup]
 AppId={{DBE5D352-0CB5-4FF0-9A8E-C8584C29D696}
-AppName=Brightness
+AppName=TrayLuminance
 AppVersion={#AppVersion}
 AppPublisher=misiek1205
-AppPublisherURL=https://github.com/misiek1205/Brightness
-AppUpdatesURL=https://github.com/misiek1205/Brightness/releases
-DefaultDirName={localappdata}\Programs\Brightness
+AppPublisherURL=https://github.com/misiek1205/trayluminance
+AppUpdatesURL=https://github.com/misiek1205/trayluminance/releases/latest
+DefaultDirName={localappdata}\Programs\TrayLuminance
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed={#AppArchitecture}
@@ -18,9 +18,9 @@ MinVersion=10.0.22000
 MinVersion=10.0.19045
 #endif
 AppMutex=Local\Brightness.Tray
-SetupIconFile=..\src\Brightness\Sun.ico
-UninstallDisplayIcon={app}\Brightness.exe
-OutputBaseFilename=Brightness-{#AppVersion}-win-{#AppArchitecture}-Setup
+SetupIconFile=..\src\TrayLuminance\Sun.ico
+UninstallDisplayIcon={app}\TrayLuminance.exe
+OutputBaseFilename=TrayLuminance-{#AppVersion}-win-{#AppArchitecture}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 
@@ -30,28 +30,28 @@ Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
 
 [CustomMessages]
 english.StartupTitle=Startup
-english.StartupDescription=Choose when Brightness starts.
-english.StartupHelp=Brightness can start in the notification area when you sign in.
-english.StartupOption=Start Brightness with Windows
-english.LaunchBrightness=Start Brightness now
+english.StartupDescription=Choose when TrayLuminance starts.
+english.StartupHelp=TrayLuminance can start in the notification area when you sign in.
+english.StartupOption=Start TrayLuminance with Windows
+english.LaunchBrightness=Start TrayLuminance now
 polish.StartupTitle=Autostart
-polish.StartupDescription=Wybierz, kiedy ma się uruchamiać Brightness.
-polish.StartupHelp=Brightness może uruchamiać się w tle i wyświetlać ikonę obok zegara po zalogowaniu.
-polish.StartupOption=Uruchamiaj Brightness z Windows
-polish.LaunchBrightness=Uruchom teraz Brightness
+polish.StartupDescription=Wybierz, kiedy ma się uruchamiać TrayLuminance.
+polish.StartupHelp=TrayLuminance może uruchamiać się w tle i wyświetlać ikonę obok zegara po zalogowaniu.
+polish.StartupOption=Uruchamiaj TrayLuminance z Windows
+polish.LaunchBrightness=Uruchom teraz TrayLuminance
 
 [Files]
 Source: "{#AppFiles}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\Brightness"; Filename: "{app}\Brightness.exe"
+Name: "{userprograms}\TrayLuminance"; Filename: "{app}\TrayLuminance.exe"
 
 [Registry]
-Root: HKCU; Subkey: "{#StartupKey}"; ValueType: string; ValueName: "Brightness"; ValueData: """{app}\Brightness.exe"""; Check: StartWithWindows
+Root: HKCU; Subkey: "{#StartupKey}"; ValueType: string; ValueName: "Brightness"; ValueData: """{app}\TrayLuminance.exe"""; Check: StartWithWindows
 Root: HKCU; Subkey: "{#StartupKey}"; ValueType: none; ValueName: "Brightness"; Flags: deletevalue; Check: not StartWithWindows
 
 [Run]
-Filename: "{app}\Brightness.exe"; Description: "{cm:LaunchBrightness}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\TrayLuminance.exe"; Description: "{cm:LaunchBrightness}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var
@@ -82,6 +82,6 @@ var
 begin
   if (CurUninstallStep = usPostUninstall) and
      RegQueryStringValue(HKCU, '{#StartupKey}', 'Brightness', StartupCommand) and
-     (CompareText(StartupCommand, '"' + ExpandConstant('{app}\Brightness.exe') + '"') = 0) then
+     (CompareText(StartupCommand, '"' + ExpandConstant('{app}\TrayLuminance.exe') + '"') = 0) then
     RegDeleteValue(HKCU, '{#StartupKey}', 'Brightness');
 end;

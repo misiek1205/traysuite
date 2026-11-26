@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$project = Join-Path $root 'src/Brightness/Brightness.csproj'
+$project = Join-Path $root 'src/TrayLuminance/TrayLuminance.csproj'
 $version = ([xml](Get-Content $project -Raw)).Project.PropertyGroup.Version
 $architecture = $Runtime.Substring(4)
 $output = Join-Path $root "artifacts/$Runtime"
@@ -42,7 +42,7 @@ $compiler = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
 if (!$compiler) {
     $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
 }
-& $compiler "/DAppVersion=$version" "/DAppArchitecture=$architecture" "/DAppFiles=$app" "/O$output" (Join-Path $PSScriptRoot 'Brightness.iss')
+& $compiler "/DAppVersion=$version" "/DAppArchitecture=$architecture" "/DAppFiles=$app" "/O$output" (Join-Path $PSScriptRoot 'TrayLuminance.iss')
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
 
-Compress-Archive -Path (Join-Path $app '*') -DestinationPath (Join-Path $output "Brightness-$version-$Runtime.zip") -Force
+Compress-Archive -Path (Join-Path $app '*') -DestinationPath (Join-Path $output "TrayLuminance-$version-$Runtime.zip") -Force
