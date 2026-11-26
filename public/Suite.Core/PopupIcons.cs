@@ -1,10 +1,10 @@
 using System.Drawing.Drawing2D;
 
-namespace Dimmli;
+namespace Suite.Core;
 
-internal enum PopupGlyph { Sun, Moon, Display, Refresh, Keyboard, Save, Back }
+public enum PopupGlyph { Sun, Moon, Display, Refresh, Keyboard, Save, Back }
 
-internal static class PopupIcons
+public static class PopupIcons
 {
     public static void Draw(Graphics graphics, PopupGlyph glyph, Rectangle bounds, Color color)
     {
@@ -68,7 +68,7 @@ internal static class PopupIcons
     }
 }
 
-internal sealed class PopupIcon(PopupGlyph glyph, Color color) : Control
+public sealed class PopupIcon(PopupGlyph glyph, Color color) : Control
 {
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -78,7 +78,7 @@ internal sealed class PopupIcon(PopupGlyph glyph, Color color) : Control
     }
 }
 
-internal sealed class BrightnessMeter : Control
+public sealed class BrightnessMeter : Control
 {
     private int level;
 

@@ -1,4 +1,4 @@
-name: Build for Windows
+name: Build public TraySuite
 
 on:
   push:
@@ -10,8 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  packages:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - rid: win-x64
@@ -19,77 +20,54 @@ jobs:
           - rid: win-arm64
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
+    env:
+      TRAYSUITE_STORE_ID: ${{ vars.TRAYSUITE_STORE_ID }}
+      TRAYSUITE_PRODUCT_ID: ${{ vars.TRAYSUITE_PRODUCT_ID }}
+      TRAYSUITE_CHECKOUT_URL: ${{ vars.TRAYSUITE_CHECKOUT_URL }}
+      TRAYSUITE_DOWNLOADS_URL: ${{ vars.TRAYSUITE_DOWNLOADS_URL }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Check the public source tree
+        shell: pwsh
+        run: |
+          if (git ls-files -- pro/ artifacts/) {
+            throw 'The public checkout contains private source or build artifacts.'
+          }
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.x'
-      - name: Build installer and portable ZIP
-        shell: pwsh
-        run: ./installer/Build-Installer.ps1 -Runtime ${{ matrix.rid }}
-      - name: Verify installation, CLI, startup preference and removal
-        shell: pwsh
-        run: |
-          $setup = (Get-ChildItem "artifacts/${{ matrix.rid }}/*-Setup.exe").FullName
-          $directory = Join-Path $env:RUNNER_TEMP 'Dimmli smoke test'
-          $app = Join-Path $directory 'Dimmli.exe'
-          $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-
-          function Install-Dimmli {
-            $process = Start-Process $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$directory`"" -Wait -PassThru
-            if ($process.ExitCode -ne 0) { throw "Setup failed with exit code $($process.ExitCode)." }
-          }
-
-          function Test-DimmliCommand($arguments, $expectedExit) {
-            $client = Start-Process $app -ArgumentList $arguments -PassThru
-            try {
-              if (!$client.WaitForExit(30000)) { throw "Dimmli command timed out ($arguments)." }
-              if ($client.ExitCode -ne $expectedExit) {
-                throw "Dimmli command ($arguments) returned $($client.ExitCode) instead of $expectedExit."
-              }
-            } finally {
-              if (!$client.HasExited) { Stop-Process -Id $client.Id }
-              $client.Dispose()
-            }
-          }
-
-          Install-Dimmli
-          $command = (Get-ItemProperty $runKey).Brightness
-          if ($command -ne "`"$app`"") { throw 'Setup did not register the installed app for startup.' }
-
-          $process = Start-Process $command.Trim('"') -PassThru
-          try {
-            if ($process.WaitForExit(5000)) {
-              throw "Dimmli exited during startup with status $($process.ExitCode)."
-            }
-            Test-DimmliCommand '--list' 0
-            Test-DimmliCommand '--brightness 101' 2
-          } finally {
-            if (-not $process.HasExited) {
-              Stop-Process -Id $process.Id
-              $process.WaitForExit()
-            }
-          }
-
-          Remove-ItemProperty $runKey Brightness
-          $legacyExecutable = Join-Path $directory 'TrayLuminance.exe'
-          New-Item -ItemType File -Path $legacyExecutable | Out-Null
-          Install-Dimmli
-          if ((Get-ItemProperty $runKey).Brightness) { throw 'Setup re-enabled startup during an upgrade.' }
-          if (Test-Path $legacyExecutable) { throw 'Upgrade left the previous executable in place.' }
-
-          Set-ItemProperty $runKey Brightness $command
-          $uninstaller = (Get-ChildItem "$directory/unins*.exe").FullName
-          $process = Start-Process $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
-          if ($process.ExitCode -ne 0 -or (Test-Path $app) -or (Get-ItemProperty $runKey).Brightness) {
-            throw 'Uninstall did not remove the app and its startup entry.'
-          }
+      - name: Build public solution independently
+        run: dotnet build public/TraySuite.sln -c Release -warnaserror
+      - name: Build public ZIPs and Hub installer
+        run: python installer/build.py build --scope public --runtime ${{ matrix.rid }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: Dimmli-${{ matrix.rid }}
+          name: ${{ matrix.rid }}
           path: |
-            artifacts/${{ matrix.rid }}/*-Setup.exe
-            artifacts/${{ matrix.rid }}/*.zip
+            artifacts/public/${{ matrix.rid }}/*-Setup.exe
+            artifacts/public/${{ matrix.rid }}/*.zip
+            artifacts/public/${{ matrix.rid }}/manifest-${{ matrix.rid }}.json
+          if-no-files-found: error
+      - name: Test installer and module lifecycle through the Hub UI
+        shell: powershell
+        run: ./installer/Smoke-Test.ps1 -Runtime ${{ matrix.rid }}
+
+  manifest:
+    needs: packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: win-*
+          path: artifacts/public
+      - run: python installer/build.py merge --scope public --inputs artifacts/public --output artifacts/release
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: public-manifest
+          path: artifacts/release/manifest.json
           if-no-files-found: error

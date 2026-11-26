@@ -3,3 +3,6 @@
 .vs/
 *.user
 artifacts/
+
+# Proprietary modules live in a separate Git checkout.
+/pro/

@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
 
-namespace Dimmli;
+namespace Suite.Core;
 
-internal sealed class TrayIcon : NativeWindow, IDisposable
+public sealed class TrayIcon : NativeWindow, IDisposable
 {
     private const uint IconId = 1;
     private const int TrayMessage = 0x8001;
@@ -11,6 +11,7 @@ internal sealed class TrayIcon : NativeWindow, IDisposable
     private const uint MessageIconTip = 0x01 | 0x02 | 0x04 | 0x80;
     private readonly int taskbarCreated = RegisterWindowMessage("TaskbarCreated");
     private readonly Icon icon;
+    private readonly string title;
     private readonly ContextMenuStrip menu;
     private bool visible;
     private bool versionFour;
@@ -18,10 +19,11 @@ internal sealed class TrayIcon : NativeWindow, IDisposable
     public event Action<Point>? Selected;
     public event Action<int>? WheelStep;
 
-    public TrayIcon(Icon icon, ContextMenuStrip menu)
+    public TrayIcon(Icon icon, ContextMenuStrip menu, string title)
     {
         this.icon = icon;
         this.menu = menu;
+        this.title = title;
         // A top-level window receives the TaskbarCreated broadcast when Explorer restarts.
         CreateHandle(new CreateParams());
         menu.Closed += MenuClosed;
@@ -118,7 +120,7 @@ internal sealed class TrayIcon : NativeWindow, IDisposable
         {
             Size = (uint)Marshal.SizeOf<IconData>(), Window = Handle, Id = IconId,
             Flags = operation == Add ? MessageIconTip : 0,
-            Callback = TrayMessage, Icon = icon.Handle, Tip = "Dimmli", Version = 4
+            Callback = TrayMessage, Icon = icon.Handle, Tip = title, Version = 4
         };
         return Shell_NotifyIcon(operation, ref data);
     }
@@ -160,7 +162,7 @@ internal sealed class TrayIcon : NativeWindow, IDisposable
     private static extern bool Shell_NotifyIcon(uint operation, ref IconData data);
 
     [DllImport("shell32.dll")]
-    private static extern int Shell_NotifyIconGetRect(ref Identifier identifier, out MonitorNative.Rect rect);
+    private static extern int Shell_NotifyIconGetRect(ref Identifier identifier, out NativeRect rect);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int RegisterWindowMessage(string name);

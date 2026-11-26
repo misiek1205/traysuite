@@ -1,6 +1,6 @@
 namespace Dimmli;
 
-internal sealed class BrightnessPanel : Form
+internal sealed class BrightnessPanel : PopupWindow
 {
     private static readonly PopupAppearance Theme = PopupAppearance.Current;
     private readonly TableLayoutPanel layout = new();
@@ -25,8 +25,6 @@ internal sealed class BrightnessPanel : Form
     private bool masterKeyHeld;
     private bool overviewVisible;
     private bool guideVisible;
-    private Rectangle workingArea;
-    private Point anchor;
     private const int HeaderHeight = 72;
     private const int OverviewHeight = 188;
     private const int RowHeight = 78;
@@ -36,18 +34,6 @@ internal sealed class BrightnessPanel : Form
     public BrightnessPanel(Action refresh, Action<Profile> apply, Action<Profile> save, Action? toggleShortcuts = null)
     {
         Text = "Dimmli";
-        ShowInTaskbar = false;
-        FormBorderStyle = FormBorderStyle.None;
-        StartPosition = FormStartPosition.Manual;
-        AutoScaleMode = AutoScaleMode.Dpi;
-        AutoScaleDimensions = new SizeF(96, 96);
-        TopMost = true;
-        KeyPreview = true;
-        Font = PopupAppearance.CaptionFont;
-        BackColor = Theme.Border;
-        ForeColor = Theme.Text;
-        Padding = new Padding(1);
-
         layout.Dock = DockStyle.Fill;
         layout.BackColor = Theme.Background;
         layout.ColumnCount = 1;
@@ -265,7 +251,6 @@ internal sealed class BrightnessPanel : Form
         layout.Controls.Add(footer, 0, 2);
         overview.Visible = false;
 
-        DpiChanged += (_, _) => BeginInvoke(ResizeAndPlace);
     }
 
     private static Label CreateLabel(string text, Color color, Font font,
@@ -275,67 +260,16 @@ internal sealed class BrightnessPanel : Form
         Margin = Padding.Empty, AutoEllipsis = true
     };
 
-    public void Open(Point position)
+    protected override void Place()
     {
-        anchor = position;
-        workingArea = Screen.FromPoint(anchor).WorkingArea;
-        // Pick the correct monitor before Windows assigns the per-monitor DPI.
-        if (!Visible)
-            Location = anchor;
-        ResizeAndPlace();
-        Show();
-        ResizeAndPlace();
-        Activate();
-    }
-
-    public void Reopen() => Open(anchor);
-
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            const int DropShadow = 0x00020000;
-            var parameters = base.CreateParams;
-            parameters.ClassStyle |= DropShadow;
-            return parameters;
-        }
-    }
-
-    protected override void OnSizeChanged(EventArgs e)
-    {
-        base.OnSizeChanged(e);
-        if (Width <= 0 || Height <= 0)
-            return;
-
-        using var outline = PopupAppearance.Rounded(new RectangleF(0, 0, Width, Height), LogicalToDeviceUnits(14));
-        Region = new Region(outline);
-    }
-
-    private void ResizeAndPlace()
-    {
-        if (workingArea.IsEmpty)
-            return;
-
-        int S(int units) => LogicalToDeviceUnits(units);
-        int gap = S(8);
-        int width = Math.Min(S(468), Math.Max(1, workingArea.Width - 2 * gap));
         int overviewHeight = overviewVisible ? OverviewHeight : 0;
         int bodyHeight = guideVisible ? 320 : overviewHeight + Math.Max(1, rows.RowCount) * (RowHeight + RowGap);
-        int height = Math.Min(S(2 + HeaderHeight + FooterHeight + bodyHeight),
-            Math.Max(1, workingArea.Height - 2 * gap));
-        layout.RowStyles[0].Height = S(HeaderHeight);
-        body.RowStyles[0].Height = S(overviewHeight);
-        layout.RowStyles[2].Height = S(FooterHeight);
+        layout.RowStyles[0].Height = LogicalToDeviceUnits(HeaderHeight);
+        body.RowStyles[0].Height = LogicalToDeviceUnits(overviewHeight);
+        layout.RowStyles[2].Height = LogicalToDeviceUnits(FooterHeight);
         foreach (Control row in rows.Controls)
-            row.Height = S(RowHeight);
-
-        int x = Math.Clamp(anchor.X - width + S(24), workingArea.Left + gap,
-            Math.Max(workingArea.Left + gap, workingArea.Right - width - gap));
-        int preferredY = anchor.Y >= workingArea.Top + workingArea.Height / 2
-            ? anchor.Y - height - gap : anchor.Y + gap;
-        int y = Math.Clamp(preferredY, workingArea.Top + gap,
-            Math.Max(workingArea.Top + gap, workingArea.Bottom - height - gap));
-        Bounds = new Rectangle(x, y, width, height);
+            row.Height = LogicalToDeviceUnits(RowHeight);
+        base.Place(360, 2 + HeaderHeight + FooterHeight + bodyHeight);
     }
 
     public void SetStatus(string message)
@@ -406,7 +340,7 @@ internal sealed class BrightnessPanel : Form
         overviewVisible = controllable > 0;
         overview.Visible = overviewVisible;
         master.Enabled = controllable > 1;
-        ResizeAndPlace();
+        Place();
     }
 
     public void UpdateMonitorName(string id, string alias)
@@ -464,7 +398,7 @@ internal sealed class BrightnessPanel : Form
         guide.Visible = visible;
         scroller.AutoScrollPosition = Point.Empty;
         guideButton.Text = visible ? Texts.Get("Back", "Wróć") : Texts.Get("Keys", "Skróty");
-        ResizeAndPlace();
+        Place();
     }
 
     public void ShiftBy(int delta)

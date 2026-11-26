@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <Product>Dimmli</Product>
+    <Description>Windows monitor brightness control from the system tray</Description>
+    <ApplicationIcon>Sun.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Sun.ico" LogicalName="Dimmli.Sun.ico" />
+    <PackageReference Include="System.Management" Version="10.0.15" />
+    <ProjectReference Include="../../Suite.Core/Suite.Core.csproj" />
+  </ItemGroup>
+</Project>

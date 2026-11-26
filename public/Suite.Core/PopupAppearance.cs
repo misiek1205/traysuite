@@ -2,9 +2,9 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
-namespace Dimmli;
+namespace Suite.Core;
 
-internal sealed record PopupAppearance(Color Background, Color Card, Color Highlight, Color Border,
+public sealed record PopupAppearance(Color Background, Color Card, Color Highlight, Color Border,
     Color Text, Color Muted, Color Accent, Color Track, Color Hover, Color Day, Color Evening, Color HeroEdge)
 {
     public static PopupAppearance Current { get; } = Read();
@@ -68,7 +68,7 @@ internal sealed record PopupAppearance(Color Background, Color Card, Color Highl
     }
 }
 
-internal class PopupCard(Color fill, bool featured = false) : Panel
+public class PopupCard(Color fill, bool featured = false) : Panel
 {
     protected override void OnPaintBackground(PaintEventArgs e)
     {
@@ -91,7 +91,7 @@ internal class PopupCard(Color fill, bool featured = false) : Panel
     }
 }
 
-internal sealed class PopupButton : Button
+public sealed class PopupButton : Button
 {
     private bool hovered;
     private readonly PopupGlyph? glyph;
@@ -152,7 +152,7 @@ internal sealed class PopupButton : Button
     }
 }
 
-internal sealed class PopupSlider : TrackBar
+public sealed class PopupSlider : TrackBar
 {
     private const uint GetThumbRectangle = 0x0400 + 25;
     private const uint GetChannelRectangle = 0x0400 + 26;
@@ -310,5 +310,5 @@ internal sealed class PopupSlider : TrackBar
     }
 
     [DllImport("user32.dll")]
-    private static extern nint SendMessage(nint handle, uint message, nint wParam, out MonitorNative.Rect rectangle);
+    private static extern nint SendMessage(nint handle, uint message, nint wParam, out NativeRect rectangle);
 }

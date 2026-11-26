@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <AssemblyMetadata Include="TraySuiteStore" Value="$(TraySuiteStoreId)" />
+    <AssemblyMetadata Include="TraySuiteProduct" Value="$(TraySuiteProductId)" />
+    <AssemblyMetadata Include="TraySuiteCheckout" Value="$(TraySuiteCheckoutUrl)" />
+    <AssemblyMetadata Include="TraySuiteDownloads" Value="$(TraySuiteDownloadsUrl)" />
+  </ItemGroup>
+</Project>

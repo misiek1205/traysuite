@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -6,7 +7,6 @@ namespace Dimmli;
 
 internal sealed class TrayApplication : ApplicationContext
 {
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     // Keep the original Run value so the installer can adopt an existing portable setup.
     private const string StartupValueName = "Brightness";
     private const string PreferencesKey = @"Software\Dimmli";
@@ -17,7 +17,8 @@ internal sealed class TrayApplication : ApplicationContext
     private readonly Icon icon;
     private readonly BrightnessPanel panel;
     private readonly GlobalShortcuts globalShortcuts;
-    private CommandPipe? commands;
+    private CommandPipe<BrightnessCommand>? commands;
+    private CommandPipe<string>? lifecycle;
     private readonly ProfileSchedule schedule;
     private readonly FullscreenWatcher fullscreen;
     private readonly MonitorService service = new();
@@ -27,7 +28,12 @@ internal sealed class TrayApplication : ApplicationContext
     private readonly Dictionary<string, int> restoreLevels = new(StringComparer.OrdinalIgnoreCase);
     private AutomationSettings automation;
     private Profile? scheduledProfile;
-    private string? fullscreenDevice, boostedId;
+    private string? fullscreenDevice;
+    private readonly HashSet<string> boosted = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> gameOverrides = new(StringComparer.OrdinalIgnoreCase);
+    private Process? gameOwner;
+    private readonly System.Windows.Forms.Timer gameTimer = new() { Interval = 1700 };
+    private LicenseMonitor? licenseMonitor;
     private bool fullscreenSuppressed, automationWrite;
     private TaskCompletionSource displayReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     // Keep profiles created by earlier releases under the previous app name.
@@ -42,11 +48,10 @@ internal sealed class TrayApplication : ApplicationContext
     private bool refreshRequested;
     private bool diagnosticsRequested;
     private bool exiting;
+    private bool proEnabled;
     private bool displaysReady;
     private bool canAdjustDisplays;
     private bool dialogOpen;
-    private long lastDismissal = -1000;
-    private Point dismissalPoint;
     private string readyStatus = "";
 
     public TrayApplication()
@@ -71,14 +76,6 @@ internal sealed class TrayApplication : ApplicationContext
         {
             profileReadFailed = true;
         }
-        panel.Deactivate += (_, _) =>
-        {
-            if (!panel.Visible)
-                return;
-            lastDismissal = Environment.TickCount64;
-            dismissalPoint = Cursor.Position;
-            panel.Hide();
-        };
         // Create a window handle so notifications can marshal onto this message loop.
         _ = panel.Handle;
         globalShortcuts = new GlobalShortcuts(HandleShortcut);
@@ -114,7 +111,7 @@ internal sealed class TrayApplication : ApplicationContext
         menu.Items.Add(Texts.Get("Refresh displays", "Odśwież monitory")).Click += (_, _) => RequestRefresh();
         var diagnostics = menu.Items.Add(Texts.Get("Check monitors…", "Sprawdź monitory…"));
         diagnostics.Click += (_, _) => RequestDiagnostics();
-        var automationItem = menu.Items.Add(Texts.Get("Automation…", "Automatyzacja…"));
+        var automationItem = menu.Items.Add(Texts.Get("Automation… · PRO", "Automatyzacja… · PRO"));
         automationItem.Click += (_, _) => EditAutomation();
         var scroll = (ToolStripMenuItem)menu.Items.Add(Texts.Get("Scroll over tray icon to adjust brightness",
             "Reguluj jasność rolką nad ikoną"));
@@ -125,7 +122,7 @@ internal sealed class TrayApplication : ApplicationContext
             panel.ShowShortcutGuide(true);
         };
         var start = (ToolStripMenuItem)menu.Items.Add(Texts.Get("Start with Windows", "Uruchamiaj z Windows"));
-        tray = new TrayIcon(icon, menu);
+        tray = new TrayIcon(icon, menu, "Dimmli");
         wheel = new TrayWheel(tray);
         menu.Opening += (_, _) =>
         {
@@ -133,6 +130,7 @@ internal sealed class TrayApplication : ApplicationContext
             scroll.Checked = wheel.Enabled;
             diagnostics.Enabled = !dialogOpen;
             automationItem.Enabled = !dialogOpen;
+            CheckLicense();
         };
         start.Click += (_, _) => ToggleStartup(start.Checked);
         menu.Items.Add(new ToolStripSeparator());
@@ -142,13 +140,8 @@ internal sealed class TrayApplication : ApplicationContext
         {
             if (dialogOpen)
                 return;
-            if (panel.Visible)
-                panel.Hide();
-            // Explorer can deactivate the flyout before delivering the click that dismissed it.
-            else if (Environment.TickCount64 - lastDismissal > 250
-                || Math.Abs(position.X - dismissalPoint.X) > 4 || Math.Abs(position.Y - dismissalPoint.Y) > 4)
-                panel.Open(position);
-            lastDismissal = -1000;
+            CheckLicense();
+            panel.Toggle(position);
         };
         tray.WheelStep += steps =>
         {
@@ -164,6 +157,11 @@ internal sealed class TrayApplication : ApplicationContext
         SystemEvents.DisplaySettingsChanged += DisplayChanged;
         SystemEvents.PowerModeChanged += PowerChanged;
         SystemEvents.TimeChanged += TimeChanged;
+        gameTimer.Tick += (_, _) =>
+        {
+            if (gameOwner is { HasExited: true })
+                ReleaseGame();
+        };
         Application.Idle += Start;
     }
 
@@ -172,7 +170,10 @@ internal sealed class TrayApplication : ApplicationContext
         Application.Idle -= Start;
         RequestRefresh();
         ConfigureAutomation();
-        commands = new CommandPipe(DispatchCommand);
+        licenseMonitor = new LicenseMonitor(panel, CheckLicense);
+        commands = new CommandPipe<BrightnessCommand>("Dimmli", (command, token) => command.IsValid()
+            ? DispatchCommand(command, token) : Task.FromResult(new CommandReply(false, "Invalid Dimmli command.")));
+        lifecycle = AppLifecycle.Listen("Dimmli", panel, OpenFromLauncher, Exit);
     }
 
     private void DisplayChanged(object? sender, EventArgs args) => ScheduleTopologyRefresh();
@@ -248,11 +249,11 @@ internal sealed class TrayApplication : ApplicationContext
         if (!automationWrite && row.Display.Id is { } id)
         {
             restoreLevels.Remove(id);
-            if (string.Equals(boostedId, id, StringComparison.OrdinalIgnoreCase))
-            {
-                boostedId = null;
+            bool wasBoosted = boosted.Remove(id);
+            if (gameOwner is not null)
+                gameOverrides.Add(id);
+            else if (wasBoosted)
                 fullscreenSuppressed = true;
-            }
         }
         pending[row] = value;
         if (!writeTimer.Enabled)
@@ -331,7 +332,7 @@ internal sealed class TrayApplication : ApplicationContext
                 for (int i = 0; i < batch.Length; i++)
                 {
                     BrightnessRow row = batch[i].Key;
-                    if (row.Display.Id is { } id && !string.Equals(id, boostedId, StringComparison.OrdinalIgnoreCase)
+                    if (row.Display.Id is { } id && !boosted.Contains(id)
                         && restoreLevels.TryGetValue(id, out int original) && original == batch[i].Value && results[i] is not null)
                         restoreLevels.Remove(id);
                     if (!exiting && !refreshRequested)
@@ -429,6 +430,12 @@ internal sealed class TrayApplication : ApplicationContext
     {
         if (dialogOpen || exiting)
             return;
+        if (!LicenseManager.IsPro)
+        {
+            MessageBox.Show(Texts.Get("Activate Pro in TraySuite Hub to enable automation.",
+                "Aktywuj wersję Pro w TraySuite Hub, aby włączyć automatyzację."), "Dimmli");
+            return;
+        }
         dialogOpen = true;
         UpdateWheelAvailability();
         panel.Hide();
@@ -456,12 +463,20 @@ internal sealed class TrayApplication : ApplicationContext
 
     private void ConfigureAutomation()
     {
-        if (automation.Schedule == ScheduleMode.Off)
+        proEnabled = LicenseManager.IsPro;
+        var effective = proEnabled ? automation : new AutomationSettings();
+        if (effective.Schedule == ScheduleMode.Off)
             scheduledProfile = null;
-        schedule.Configure(automation);
-        if (!fullscreen.Configure(automation.Fullscreen))
+        schedule.Configure(effective);
+        if (!fullscreen.Configure(effective.Fullscreen))
             panel.SetStatus(Texts.Get("Could not watch for fullscreen windows.", "Nie udało się włączyć wykrywania pełnego ekranu."));
         UpdateFullscreen();
+    }
+
+    private void CheckLicense()
+    {
+        if (proEnabled != LicenseManager.IsPro)
+            ConfigureAutomation();
     }
 
     private void CalibrateMonitor(Display display)
@@ -504,31 +519,36 @@ internal sealed class TrayApplication : ApplicationContext
 
     private void UpdateFullscreen()
     {
-        if (!displaysReady || (restoreLevels.Count == 0 && fullscreenDevice is null))
+        if (!displaysReady)
             return;
 
         var identified = panel.ProfileRows();
-        BrightnessRow? target = null;
-        if (!exiting && automation.Fullscreen && !fullscreenSuppressed && fullscreenDevice is not null)
+        boosted.Clear();
+        if (!exiting && proEnabled)
         {
-            var candidates = panel.DisplayRows.Where(row =>
-                string.Equals(row.Display.ScreenDevice, fullscreenDevice, StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
-            if (candidates.Length == 1 && candidates[0].Display.Id is { } id && identified.ContainsKey(id))
-                target = candidates[0];
+            if (gameOwner is not null)
+                boosted.UnionWith(identified.Keys.Where(id => !gameOverrides.Contains(id)));
+            else if (automation.Fullscreen && !fullscreenSuppressed && fullscreenDevice is not null)
+            {
+                var candidates = panel.DisplayRows.Where(row =>
+                    string.Equals(row.Display.ScreenDevice, fullscreenDevice, StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
+                if (candidates.Length == 1 && candidates[0].Display.Id is { } id && identified.ContainsKey(id))
+                    boosted.Add(id);
+            }
         }
-        boostedId = target?.Display.Id;
 
         automationWrite = true;
         try
         {
-            if (target is not null && boostedId is { } targetId)
+            foreach (string id in boosted)
             {
-                restoreLevels.TryAdd(targetId, target.Target);
-                target.SetTarget(automation.FullscreenLevel);
+                BrightnessRow target = identified[id];
+                restoreLevels.TryAdd(id, target.Target);
+                target.SetTarget(gameOwner is null ? automation.FullscreenLevel : 100);
             }
             foreach (var (id, original) in restoreLevels.ToArray())
             {
-                if (string.Equals(id, boostedId, StringComparison.OrdinalIgnoreCase)
+                if (boosted.Contains(id)
                     || !identified.TryGetValue(id, out var row))
                     continue;
                 if (row.Confirmed == original && row.Target == original && !pending.ContainsKey(row))
@@ -563,6 +583,8 @@ internal sealed class TrayApplication : ApplicationContext
 
     private CommandReply ExecuteCommand(BrightnessCommand command)
     {
+        if (command.GameOwner is int owner)
+            return SetGameOwner(owner, command.ReleaseGame);
         var rows = panel.DisplayRows.ToArray();
         if (command.List)
         {
@@ -595,6 +617,52 @@ internal sealed class TrayApplication : ApplicationContext
         }
         return changed > 0 ? new(true, $"Brightness accepted for {changed} monitor(s).")
             : new(false, "No brightness controls available.");
+    }
+
+    private CommandReply SetGameOwner(int owner, bool release)
+    {
+        if (release)
+        {
+            if (gameOwner?.Id == owner)
+                ReleaseGame();
+            return new(true, "Game brightness released.");
+        }
+        if (!LicenseManager.IsPro || gameOwner is not null && gameOwner.Id != owner)
+            return new(false, "Game brightness is unavailable.");
+        if (panel.ProfileRows().Count == 0)
+            return new(false, "No brightness controls available.");
+        if (gameOwner is not null)
+            return new(true, "Game brightness already active.");
+
+        Process? process = null;
+        try
+        {
+            process = Process.GetProcessById(owner);
+            using var current = Process.GetCurrentProcess();
+            if (process.SessionId != current.SessionId || process.HasExited)
+                return new(false, "Game mode owner is no longer running.");
+            _ = process.SafeHandle;
+            gameOwner = process;
+            process = null;
+            gameTimer.Start();
+            CheckLicense();
+            UpdateFullscreen();
+            return new(true, $"Game brightness accepted for {boosted.Count} monitor(s).");
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return new(false, "Game mode owner is inaccessible.");
+        }
+        finally { process?.Dispose(); }
+    }
+
+    private void ReleaseGame()
+    {
+        gameTimer.Stop();
+        gameOwner?.Dispose();
+        gameOwner = null;
+        gameOverrides.Clear();
+        UpdateFullscreen();
     }
 
     private void UpdateWheelAvailability() =>
@@ -701,7 +769,7 @@ internal sealed class TrayApplication : ApplicationContext
                 {
                     if (fromSchedule && restoreLevels.ContainsKey(id))
                         restoreLevels[id] = level;
-                    if (!fromSchedule || !string.Equals(id, boostedId, StringComparison.OrdinalIgnoreCase))
+                    if (!fromSchedule || !boosted.Contains(id))
                         row.SetTarget(level);
                     count++;
                 }
@@ -740,21 +808,13 @@ internal sealed class TrayApplication : ApplicationContext
     private static bool IsPreferenceError(Exception error) =>
         error is IOException or UnauthorizedAccessException or System.Security.SecurityException;
 
-    private static bool StartsWithWindows()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-        return key?.GetValue(StartupValueName) is string;
-    }
+    private static bool StartsWithWindows() => Startup.IsEnabled(StartupValueName);
 
     private static void ToggleStartup(bool enabled)
     {
         try
         {
-            using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-            if (enabled)
-                key.DeleteValue(StartupValueName, throwOnMissingValue: false);
-            else
-                key.SetValue(StartupValueName, $"\"{Application.ExecutablePath}\"");
+            Startup.Set(StartupValueName, Application.ExecutablePath, !enabled);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
@@ -763,12 +823,21 @@ internal sealed class TrayApplication : ApplicationContext
         }
     }
 
+    public void OpenFromLauncher()
+    {
+        if (dialogOpen || exiting)
+            return;
+        CheckLicense();
+        var bounds = tray.IconBounds();
+        panel.Open(bounds.IsEmpty ? PopupWindow.ClockAnchor() : new Point(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2));
+    }
+
     private void Exit()
     {
         exiting = true;
         displayReady.TrySetResult();
         fullscreen.Configure(false);
-        UpdateFullscreen();
+        ReleaseGame();
         wheel.SetEnabled(false);
         panel.Hide();
         tray.Visible = false;
@@ -787,6 +856,10 @@ internal sealed class TrayApplication : ApplicationContext
             topologyTimer.Dispose();
             writeTimer.Dispose();
             commands?.Dispose();
+            lifecycle?.Dispose();
+            licenseMonitor?.Dispose();
+            gameTimer.Dispose();
+            gameOwner?.Dispose();
             schedule.Dispose();
             fullscreen.Dispose();
             globalShortcuts.Dispose();
