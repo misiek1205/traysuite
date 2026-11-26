@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,8 @@ SETTINGS = {
     "TRAYSUITE_DOWNLOADS_URL": "TraySuiteDownloadsUrl",
 }
 RELEASES = "https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json"
+RUNTIME_ORIGIN = "https://builds.dotnet.microsoft.com/"
+RUNTIME_MIRROR = "https://dotnetcli.blob.core.windows.net/"
 
 
 def load(path):
@@ -160,43 +163,73 @@ def build_setup(hub, output, runtime, app_version, work):
     desktop = next(item for item in release["windowsdesktop"]["files"]
                    if item["rid"] == runtime and item["name"].endswith(".exe"))
     executable = work / "desktop-runtime.exe"
-    with urllib.request.urlopen(desktop["url"], timeout=90) as source, executable.open("wb") as destination:
-        shutil.copyfileobj(source, destination)
-    if digest(executable, "sha512") != desktop["hash"].lower():
-        raise ValueError("Microsoft Desktop Runtime SHA-512 does not match the release metadata.")
+    runtime_url = download_runtime(desktop, executable)
     run(compiler, f"/DAppVersion={app_version}", f"/DAppArchitecture={runtime[4:]}",
-        f"/DAppFiles={hub}", f"/DRuntimeUrl={desktop['url']}", f"/DRuntimeSha256={digest(executable)}",
+        f"/DAppFiles={hub}", f"/DRuntimeUrl={runtime_url}", f"/DRuntimeSha256={digest(executable)}",
         f"/O{output}", str(ROOT / "installer" / "TraySuite.iss"))
 
 
-def merge(scope, inputs, output, pro_metadata):
+def download_runtime(desktop, executable):
+    primary_url = desktop["url"]
+    urls = [primary_url]
+    if primary_url.startswith(RUNTIME_ORIGIN):
+        # The Microsoft blob endpoint serves the same runtime from the release metadata.
+        urls.append(RUNTIME_MIRROR + primary_url.removeprefix(RUNTIME_ORIGIN))
+    errors = []
+    for url in urls:
+        try:
+            with urllib.request.urlopen(url, timeout=90) as source, executable.open("wb") as destination:
+                shutil.copyfileobj(source, destination)
+        except (OSError, http.client.HTTPException) as error:
+            errors.append(f"{url}: {error}")
+            continue
+        if digest(executable, "sha512") == desktop["hash"].lower():
+            return url
+        errors.append(f"{url}: SHA-512 does not match the release metadata")
+    raise RuntimeError("Could not verify the Microsoft Desktop Runtime download. " + " | ".join(errors))
+
+
+def merge(scope, inputs, output, pro_metadata, bundle=False):
+    catalog = {app["id"]: app["tier"] for app in load(CATALOG)["apps"]
+               if scope == "public" or app["tier"] == "pro"}
     named = {}
+    release_files = {}
     for runtime in RUNTIMES:
         fragment = load(inputs / runtime / f"manifest-{runtime}.json")
         if fragment["schema_version"] != 1:
             raise ValueError("Unsupported manifest schema.")
+        seen = set()
         for app in fragment["apps"]:
             key = app["id"]
+            if key in seen or key not in catalog or catalog[key] != app["tier"]:
+                raise ValueError(f"Unexpected or duplicate app in {runtime} manifest: {key}.")
+            seen.add(key)
             package = app["packages"][runtime]
             stem = {name: value for name, value in app.items() if name != "packages"}
             current = named.setdefault(key, {**stem, "packages": {}})
             if any(current[name] != value for name, value in stem.items()):
                 raise ValueError(f"Inconsistent metadata for {key}.")
-            if scope == "public" and app["tier"] == "pro" and (package["download_url"] or package["sha256"]):
-                raise ValueError(f"Private metadata leaked for {key}.")
-            if scope == "pro" and app["tier"] != "pro":
-                raise ValueError(f"Unexpected free app in private manifest: {key}.")
-            filename = inputs / runtime / f"{key}-{runtime}.zip"
-            if package["download_url"] and (filename.stat().st_size != package["size_bytes"]
-                                            or digest(filename) != package["sha256"]):
-                raise ValueError(f"Invalid manifest entry for {filename}.")
+            if scope == "public" and app["tier"] == "pro":
+                if package["download_url"] or package["sha256"]:
+                    raise ValueError(f"Private metadata leaked for {key}.")
+            else:
+                filename = inputs / runtime / f"{key}-{runtime}.zip"
+                url = package["download_url"]
+                valid_url = url == filename.name or scope == "pro" and isinstance(url, str) and url.startswith("https://")
+                if not valid_url or filename.stat().st_size != package["size_bytes"] or digest(filename) != package["sha256"]:
+                    raise ValueError(f"Invalid manifest entry for {filename}.")
+                release_files[filename] = package["sha256"]
             current["packages"][runtime] = package
-    expected = {app["id"] for app in load(CATALOG)["apps"] if scope == "public" or app["tier"] == "pro"}
-    if set(named) != expected or any(
-        set(item["packages"]) != set(RUNTIMES) or len({package["version"] for package in item["packages"].values()}) != 1
+        if seen != catalog.keys():
+            raise ValueError(f"Missing apps in {runtime} manifest: {', '.join(sorted(catalog.keys() - seen))}.")
+        if bundle:
+            setup = inputs / runtime / f"TraySuite-Hub-{runtime}-Setup.exe"
+            release_files[setup] = digest(setup)
+    if any(
+        len({package["version"] for package in item["packages"].values()}) != 1
         for item in named.values()
     ):
-        raise ValueError("Release manifest is missing apps, architectures or matching versions.")
+        raise ValueError("Package versions differ between architectures.")
     if pro_metadata:
         private = load(pro_metadata)
         if private["schema_version"] != 1:
@@ -212,7 +245,16 @@ def merge(scope, inputs, output, pro_metadata):
                 public_package = named[app["id"]]["packages"][runtime]
                 public_package.update(version=package["version"], size_bytes=package["size_bytes"])
     name = "manifest.json" if scope == "public" else "manifest-pro.json"
-    save(output / name, {"schema_version": 1, "apps": list(named.values())})
+    manifest = output / name
+    save(manifest, {"schema_version": 1, "apps": list(named.values())})
+    if bundle:
+        release_files[manifest] = digest(manifest)
+        with zipfile.ZipFile(output / "TraySuite-public-release.zip", "w") as archive:
+            checksums = []
+            for filename, checksum in sorted(release_files.items(), key=lambda entry: entry[0].name):
+                archive.write(filename, filename.name)
+                checksums.append(f"{checksum}  {filename.name}\n")
+            archive.writestr("SHA256SUMS.txt", "".join(checksums))
 
 
 def main():
@@ -230,6 +272,7 @@ def main():
     merge_parser.add_argument("--inputs", type=Path, required=True)
     merge_parser.add_argument("--output", type=Path, required=True)
     merge_parser.add_argument("--pro-metadata", type=Path, help="Copy only the Pro version and size into the public manifest.")
+    merge_parser.add_argument("--bundle", action="store_true", help="Archive the public GitHub Release assets together.")
     options = parser.parse_args()
 
     if options.task == "build":
@@ -241,7 +284,9 @@ def main():
     else:
         if options.pro_metadata and options.scope != "public":
             parser.error("--pro-metadata applies only to the public manifest.")
-        merge(options.scope, options.inputs, options.output, options.pro_metadata)
+        if options.bundle and options.scope != "public":
+            parser.error("--bundle applies only to the public manifest.")
+        merge(options.scope, options.inputs, options.output, options.pro_metadata, options.bundle)
 
 
 if __name__ == "__main__":

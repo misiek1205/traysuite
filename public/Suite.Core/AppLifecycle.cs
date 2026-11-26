@@ -55,6 +55,7 @@ public static class AppLifecycle
         if (command == "--exit")
             return 0;
         initialize();
+        Application.SetColorMode(SystemColorMode.System);
         if (pro && !LicenseManager.IsPro)
         {
             if (command != "--start")
@@ -83,12 +84,13 @@ public sealed class TrayContext : ApplicationContext
 {
     private readonly PopupWindow popup;
     private readonly TrayIcon tray;
-    private readonly ContextMenuStrip menu = new();
+    private readonly PopupMenu menu = new();
+    private readonly Icon? ownedIcon;
     private readonly CommandPipe<string> listener;
     private LicenseMonitor? licenseMonitor;
     private bool disposed;
 
-    public TrayContext(string id, string title, PopupWindow popup, Icon icon, bool trayVisible = true,
+    public TrayContext(string id, string title, PopupWindow popup, Icon? icon = null, bool trayVisible = true,
         ToolStripMenuItem? extraAction = null)
     {
         this.popup = popup;
@@ -109,6 +111,8 @@ public sealed class TrayContext : ApplicationContext
         if (extraAction is not null)
             menu.Items.Add(extraAction);
         menu.Items.Add(Texts.Get("Exit", "Zakończ")).Click += (_, _) => ExitThread();
+        if (icon is null)
+            ownedIcon = icon = ModuleIdentity.For(title).CreateTrayIcon(SystemInformation.SmallIconSize.Width);
         tray = new TrayIcon(icon, menu, title) { Visible = trayVisible };
         tray.Selected += popup.Toggle;
         listener = AppLifecycle.Listen(id, popup, Open, ExitThread);
@@ -152,6 +156,7 @@ public sealed class TrayContext : ApplicationContext
             listener.Dispose();
             licenseMonitor?.Dispose();
             tray.Dispose();
+            ownedIcon?.Dispose();
             menu.Dispose();
             if (!popup.IsDisposed)
                 popup.Dispose();

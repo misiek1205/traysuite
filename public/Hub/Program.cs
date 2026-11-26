@@ -21,12 +21,8 @@ internal static class Program
 
         return AppLifecycle.Run("Hub", args, () => ApplicationConfiguration.Initialize(), () =>
         {
-            using var resource = typeof(Program).Assembly.GetManifestResourceStream("TraySuite.Icon")!;
-            using var source = new Icon(resource);
-            var icon = (Icon)source.Clone();
             var window = new HubWindow(local, showTray);
-            window.Disposed += (_, _) => icon.Dispose();
-            var restart = new ToolStripMenuItem(Texts.Get("Restart Windows Explorer", "Restartuj Eksplorator Windows"));
+            var restart = new ToolStripMenuItem(ExplorerRestart.ActionText);
             restart.Click += async (_, _) =>
             {
                 restart.Enabled = false;
@@ -38,7 +34,7 @@ internal static class Program
                 }
                 finally { restart.Enabled = true; }
             };
-            var context = new TrayContext("Hub", window.Text, window, icon, window.ShowTray, restart);
+            var context = new TrayContext("Hub", window.Text, window, trayVisible: window.ShowTray, extraAction: restart);
             window.TrayChanged += visible => context.TrayVisible = visible;
             window.ReadyToExit += context.ExitThread;
             return context;

@@ -7,7 +7,7 @@ internal static class Program
 {
     [STAThread]
     private static int Main(string[] args) => AppLifecycle.Run("Awake", args, () => ApplicationConfiguration.Initialize(),
-        () => new TrayContext("Awake", "Awake", new AwakeWindow(), SystemIcons.Information));
+        () => new TrayContext("Awake", "Awake", new AwakeWindow()));
 }
 
 internal sealed class AwakeWindow : ModuleWindow
@@ -19,20 +19,21 @@ internal sealed class AwakeWindow : ModuleWindow
     private DateTimeOffset? until;
     private Process? watched;
 
-    public AwakeWindow() : base("Awake", Texts.Get("Keep the PC and screen awake", "Blokada uśpienia komputera i ekranu"), 303)
+    public AwakeWindow() : base("Awake", Texts.Get("Keep the PC and screen awake", "Blokada uśpienia komputera i ekranu"), 306)
     {
-        mode = Label("", font: PopupAppearance.LabelFont);
-        Add(mode, 25);
+        mode = Label("", font: PopupAppearance.ValueFont);
+        Add(Card(mode, featured: true), 55);
         Add(Columns(Button(Texts.Get("Off", "Wyłączone"), () => Set(null, null, false)),
             Button(Texts.Get("30 min", "30 min"), () => Set(TimeSpan.FromMinutes(30), null)),
             Button(Texts.Get("1 hour", "1 godz."), () => Set(TimeSpan.FromHours(1), null)),
-            Button(Texts.Get("Unlimited", "Bez limitu"), () => Set(null, null))), 34);
+            Button(Texts.Get("Unlimited", "Bez limitu"), () => Set(null, null))), 35);
         processes.AccessibleName = Texts.Get("Running process", "Uruchomiony proces");
         processes.BackColor = Theme.Card;
         processes.ForeColor = Theme.Text;
         processes.DropDown += (_, _) => RefreshProcesses();
-        Add(processes, 28);
-        Add(Button(Texts.Get("While selected process runs", "Dopóki działa wybrany proces"), SelectProcess), 32);
+        Add(PopupField.Wrap(processes), 38);
+        Add(Button(Texts.Get("While selected process runs", "Dopóki działa wybrany proces"), SelectProcess,
+            PopupGlyph.Cup, PopupButtonStyle.Primary), 36);
         timer.Tick += (_, _) =>
         {
             if (until <= DateTimeOffset.UtcNow || watched is { HasExited: true })

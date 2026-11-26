@@ -114,9 +114,12 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
             await File.WriteAllTextAsync(Path.Combine(payload, VersionFile), source.Version, token);
             bool running = AppLifecycle.IsRunning(app.Id);
             await Stop(app.Id, token);
-            if (Directory.Exists(destination))
-                await MoveInstalledDirectory(destination, backup, token);
-            try { Directory.Move(payload, destination); }
+            try
+            {
+                if (Directory.Exists(destination))
+                    await MoveInstalledDirectory(destination, backup, token);
+                Directory.Move(payload, destination);
+            }
             catch
             {
                 Recover(destination, backup);
@@ -200,9 +203,7 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
             token.ThrowIfCancellationRequested();
             string name = Path.GetFileName(path);
             if (name.StartsWith(id + ".", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("Suite.Core.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("System.Management.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("System.CodeDom.dll", StringComparison.OrdinalIgnoreCase))
+                Path.GetExtension(name).Equals(".dll", StringComparison.OrdinalIgnoreCase))
                 File.Copy(path, Path.Combine(destination, name));
         }
     }

@@ -5,6 +5,8 @@ namespace TraySuite.Hub;
 
 internal static class ExplorerRestart
 {
+    public static string ActionText => Texts.Get("Restart Windows Explorer", "Restartuj Eksplorator Windows");
+
     public static async Task Run()
     {
         string executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");

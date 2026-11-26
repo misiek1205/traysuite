@@ -7,7 +7,7 @@ internal static class Program
 {
     [STAThread]
     private static int Main(string[] args) => AppLifecycle.Run("ClipPlain", args, () => ApplicationConfiguration.Initialize(),
-        () => new TrayContext("ClipPlain", "ClipPlain", new ClipboardWindow(), SystemIcons.Application));
+        () => new TrayContext("ClipPlain", "ClipPlain", new ClipboardWindow()));
 }
 
 internal sealed class ClipboardWindow : ModuleWindow
@@ -98,16 +98,20 @@ internal sealed class ClipboardWindow : ModuleWindow
         try
         {
             ClearBody();
+            LogicalHeight = Math.Min(390, 140 + Math.Max(74, history.Count * 47));
             if (history.Count == 0)
-                Add(Label(Texts.Get("Copy some text to see it here.", "Skopiuj tekst, aby zobaczyć go tutaj."), muted: true), 32);
+                Add(Card(Label(Texts.Get("Copy some text to see it here.", "Skopiuj tekst, aby zobaczyć go tutaj."),
+                    muted: true), featured: true), 66);
             foreach (var text in history)
             {
                 string preview = text[..Math.Min(text.Length, 100)].Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ').Trim();
                 Add(Button(preview.Length == 0 ? Texts.Get("Whitespace", "Białe znaki") : preview,
-                    () => CopyPlain(text, previousWindow)), 33);
+                    () => CopyPlain(text, previousWindow), PopupGlyph.Clipboard, leftAligned: true), 40);
             }
         }
         finally { Body.ResumeLayout(); }
+        if (Visible)
+            Place();
     }
 
     private void CopyPlain(string? text, nint target)

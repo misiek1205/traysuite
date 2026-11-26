@@ -39,8 +39,9 @@ internal sealed class PackageCatalog
 
     public IReadOnlyList<CatalogApp> Fallback => BuiltIn.Apps;
 
-    public async Task<IReadOnlyList<CatalogApp>> Load(Uri? proManifest, CancellationToken token)
+    public async Task<IReadOnlyList<CatalogApp>> Load(Uri? proManifest, CancellationToken token, bool includePrivate = true)
     {
+        bool loadPro = includePrivate && LicenseManager.IsPro;
         Catalog publicCatalog;
         Catalog? privateCatalog = null;
         Uri origin;
@@ -51,7 +52,7 @@ internal sealed class PackageCatalog
             origin = new Uri(path);
             publicCatalog = File.Exists(path) ? await ReadFile(path, token) : BuiltIn;
             var privatePath = Path.Combine(local, "manifest-pro.json");
-            if (LicenseManager.IsPro && File.Exists(privatePath))
+            if (loadPro && File.Exists(privatePath))
             {
                 privateCatalog = await ReadFile(privatePath, token);
                 privateOrigin = new Uri(privatePath);
@@ -60,7 +61,7 @@ internal sealed class PackageCatalog
         else
         {
             (publicCatalog, origin) = await ReadRemote(PublicManifest, token);
-            if (LicenseManager.IsPro && proManifest is not null)
+            if (loadPro && proManifest is not null)
                 (privateCatalog, privateOrigin) = await ReadRemote(proManifest, token);
         }
 
@@ -79,7 +80,7 @@ internal sealed class PackageCatalog
 
             if (package?.DownloadUrl is { Length: > 0 } download)
                 package = package with { DownloadUrl = Resolve(packageOrigin, download).AbsoluteUri };
-            else if (local is not null && (!item.Pro || LicenseManager.IsPro))
+            else if (local is not null && (!item.Pro || loadPro))
                 package = DiscoverLocal(item, package);
             return item with { Packages = package is null ? null : new() { [Runtime] = package } };
         }).ToArray();

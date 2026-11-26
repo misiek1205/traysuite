@@ -9,10 +9,13 @@ public sealed record PopupAppearance(Color Background, Color Card, Color Highlig
 {
     public static PopupAppearance Current { get; } = Read();
 
-    public static readonly Font TitleFont = new("Segoe UI", 22, FontStyle.Bold);
+    public static readonly Font TitleFont = new("Segoe UI Variable Display", 21, FontStyle.Bold);
     public static readonly Font CaptionFont = new("Segoe UI", 9);
-    public static readonly Font LabelFont = new("Segoe UI", 10, FontStyle.Bold);
-    public static readonly Font ValueFont = new("Segoe UI", 14, FontStyle.Bold);
+    public static readonly Font LabelFont = new("Segoe UI Semibold", 10);
+    public static readonly Font ValueFont = new("Segoe UI Variable Display", 15, FontStyle.Bold);
+    public static readonly Font KeyFont = new("Cascadia Mono", 8.5f);
+    public Color OnAccent => SystemInformation.HighContrast ? SystemColors.HighlightText
+        : Accent.GetBrightness() > .62f ? ColorOf(0x121227) : Color.White;
 
     private static PopupAppearance Read()
     {
@@ -21,17 +24,27 @@ public sealed record PopupAppearance(Color Background, Color Card, Color Highlig
                 SystemColors.WindowText, SystemColors.GrayText, SystemColors.Highlight, SystemColors.GrayText,
                 SystemColors.Control, SystemColors.WindowText, SystemColors.WindowText, SystemColors.Window);
 
-        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-        return key?.GetValue("AppsUseLightTheme") is 1
-            ? new(ColorOf(0xf1f4f8), ColorOf(0xfbfdff), ColorOf(0xeaf3ff), ColorOf(0xd7dfeb),
-                ColorOf(0x162236), ColorOf(0x4d5e75), ColorOf(0x1458ae), ColorOf(0xc6d3e5), ColorOf(0xe6effb),
-                ColorOf(0x884a14), ColorOf(0x634caa), ColorOf(0xe5e8ff))
-            : new(ColorOf(0x111620), ColorOf(0x1a222f), ColorOf(0x1a2c44), ColorOf(0x344358),
-                ColorOf(0xf1f6ff), ColorOf(0xa9b7cc), ColorOf(0x8acfff), ColorOf(0x42516a), ColorOf(0x293b52),
-                ColorOf(0xffce95), ColorOf(0xc6b4ff), ColorOf(0x2a274a));
+        var mode = Application.ColorMode;
+        if (mode == SystemColorMode.System)
+        {
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+                mode = Application.SystemColorMode;
+            else
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                mode = key?.GetValue("AppsUseLightTheme", 1) is 0 ? SystemColorMode.Dark : SystemColorMode.Classic;
+            }
+        }
+        return mode != SystemColorMode.Dark
+            ? new(ColorOf(0xf5f5f9), ColorOf(0xffffff), ColorOf(0xefedfb), ColorOf(0xdad9e5),
+                ColorOf(0x201e2c), ColorOf(0x5f5d72), ColorOf(0x5145ad), ColorOf(0xdcd9e9), ColorOf(0xedeaf8),
+                ColorOf(0x874819), ColorOf(0x6443a3), ColorOf(0xf5e5f0))
+            : new(ColorOf(0x191922), ColorOf(0x23232f), ColorOf(0x30294a), ColorOf(0x3b394e),
+                ColorOf(0xf7f5ff), ColorOf(0xb9b5cc), ColorOf(0xc4b6ff), ColorOf(0x484459), ColorOf(0x343147),
+                ColorOf(0xffcb90), ColorOf(0xd9bfff), ColorOf(0x3b2942));
     }
 
-    private static Color ColorOf(int rgb) => Color.FromArgb(unchecked((int)0xff000000) | rgb);
+    internal static Color ColorOf(int rgb) => Color.FromArgb(unchecked((int)0xff000000) | rgb);
 
     public static Color Tint(Color surface, Color accent, double amount) =>
         Color.FromArgb(
@@ -42,9 +55,14 @@ public sealed record PopupAppearance(Color Background, Color Card, Color Highlig
     public static GraphicsPath Rounded(RectangleF rect, float radius)
     {
         var path = new GraphicsPath();
+        if (rect.Width <= 0 || rect.Height <= 0)
+            return path;
         float diameter = Math.Min(radius * 2, Math.Min(rect.Width, rect.Height));
         if (diameter <= 0)
+        {
+            path.AddRectangle(rect);
             return path;
+        }
 
         path.AddArc(rect.Left, rect.Top, diameter, diameter, 180, 90);
         path.AddArc(rect.Right - diameter, rect.Top, diameter, diameter, 270, 90);
@@ -66,48 +84,140 @@ public sealed record PopupAppearance(Color Background, Color Card, Color Highlig
         graphics.FillPath(brush, path);
         graphics.DrawPath(outline, path);
     }
+
+    internal static void PaintParentSurface(Control child, PaintEventArgs e)
+    {
+        void Fill(Color color)
+        {
+            using var brush = new SolidBrush(color);
+            e.Graphics.FillRectangle(brush, child.ClientRectangle);
+        }
+
+        var offset = child.Location;
+        for (var parent = child.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is PopupCard card)
+            {
+                Fill(ParentColor(card));
+                var state = e.Graphics.Save();
+                e.Graphics.TranslateTransform(-offset.X, -offset.Y);
+                card.PaintSurface(e.Graphics);
+                e.Graphics.Restore(state);
+                return;
+            }
+            if (parent.BackColor.A == 255)
+            {
+                Fill(parent.BackColor);
+                return;
+            }
+            offset.Offset(parent.Location);
+        }
+        Fill(Current.Background);
+    }
+
+    internal static Color ParentColor(Control child)
+    {
+        for (var parent = child.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is PopupCard card)
+                return card.Fill;
+            if (parent.BackColor.A == 255)
+                return parent.BackColor;
+        }
+        return Current.Background;
+    }
 }
 
-public class PopupCard(Color fill, bool featured = false) : Panel
+public class PopupCard : Panel
 {
+    private readonly Color fill;
+    private readonly bool featured;
+
+    public PopupCard(Color fill, bool featured = false)
+    {
+        this.fill = fill;
+        this.featured = featured;
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        base.OnPaintBackground(e);
+        PopupAppearance.PaintParentSurface(this, e);
+        PaintSurface(e.Graphics);
+    }
+
+    internal Color Fill => fill;
+
+    internal void PaintSurface(Graphics graphics)
+    {
         var theme = PopupAppearance.Current;
         var bounds = new RectangleF(.5f, .5f, Width - 1, Height - 1);
-        int radius = LogicalToDeviceUnits(featured ? 20 : 13);
+        int radius = LogicalToDeviceUnits(featured ? 19 : 14);
         if (!featured || SystemInformation.HighContrast || Width <= 2 || Height <= 2)
         {
-            PopupAppearance.Surface(e.Graphics, bounds, radius, fill, theme.Border);
+            PopupAppearance.Surface(graphics, bounds, radius, fill, theme.Border);
             return;
         }
 
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using var path = PopupAppearance.Rounded(bounds, radius);
         using var gradient = new LinearGradientBrush(bounds, fill, theme.HeroEdge, 20f);
-        using var line = new Pen(Color.FromArgb(135, theme.Accent));
-        e.Graphics.FillPath(gradient, path);
-        e.Graphics.DrawPath(line, path);
+        using var line = new Pen(PopupAppearance.Tint(theme.Border, theme.Accent, .23));
+        graphics.FillPath(gradient, path);
+        graphics.DrawPath(line, path);
     }
 }
+
+public enum PopupButtonStyle { Standard, Primary, Quiet }
 
 public sealed class PopupButton : Button
 {
     private bool hovered;
+    private bool pressed;
+    private bool selected;
     private readonly PopupGlyph? glyph;
     private readonly bool iconOnly;
     private readonly bool leftAligned;
     private readonly bool inset;
+    private readonly PopupButtonStyle style;
 
-    public PopupButton(PopupGlyph? glyph = null, bool iconOnly = false, bool leftAligned = false, bool inset = false)
+    public PopupButton(PopupGlyph? glyph = null, bool iconOnly = false, bool leftAligned = false, bool inset = false,
+        PopupButtonStyle style = PopupButtonStyle.Standard)
     {
         this.glyph = glyph;
         this.iconOnly = iconOnly;
         this.leftAligned = leftAligned;
         this.inset = inset;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        this.style = style;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.Opaque | ControlStyles.AllPaintingInWmPaint |
+            ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         FlatStyle = FlatStyle.Flat;
+        FlatAppearance.BorderSize = 0;
+        ForeColor = PopupAppearance.Current.Text;
+        Font = PopupAppearance.CaptionFont;
         Cursor = Cursors.Hand;
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            SetStyle(ControlStyles.ApplyThemingImplicitly, false);
+            return base.CreateParams;
+        }
+    }
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Selected
+    {
+        get => selected;
+        set
+        {
+            if (selected == value)
+                return;
+            selected = value;
+            Invalidate();
+        }
     }
 
     protected override void OnMouseEnter(EventArgs e)
@@ -124,31 +234,59 @@ public sealed class PopupButton : Button
         base.OnMouseLeave(e);
     }
 
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        pressed = e.Button == MouseButtons.Left;
+        Invalidate();
+        base.OnMouseDown(e);
+    }
+
+    protected override void OnMouseCaptureChanged(EventArgs e)
+    {
+        pressed = false;
+        Invalidate();
+        base.OnMouseCaptureChanged(e);
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
+        PopupAppearance.PaintParentSurface(this, e);
         var theme = PopupAppearance.Current;
-        Color surface = inset ? BackColor : theme.Card;
-        Color fill = hovered && Enabled ? PopupAppearance.Tint(surface, theme.Hover, .82) : surface;
-        Color text = Enabled ? ForeColor : theme.Muted;
-        Color border = Focused && ShowFocusCues ? theme.Accent : inset ? fill : theme.Border;
+        bool primary = Enabled && style == PopupButtonStyle.Primary;
+        bool quiet = style == PopupButtonStyle.Quiet;
+        Color surface = primary ? theme.Accent : selected ? theme.Highlight : inset && BackColor.A == 255 ? BackColor
+            : quiet || inset ? PopupAppearance.ParentColor(this) : theme.Card;
+        Color fill = !Enabled ? PopupAppearance.Tint(surface, theme.Background, .55)
+            : hovered ? PopupAppearance.Tint(surface, primary ? theme.Text : theme.Accent, pressed ? .19 : .085) : surface;
+        Color text = !Enabled ? theme.Muted : primary ? theme.OnAccent : selected ? theme.Accent : ForeColor;
+        Color border = Focused && ShowFocusCues ? theme.Accent
+            : selected ? PopupAppearance.Tint(theme.Border, theme.Accent, .45)
+            : primary || inset || quiet ? fill : theme.Border;
+        if (primary && Focused && ShowFocusCues)
+            border = theme.OnAccent;
         PopupAppearance.Surface(e.Graphics, new RectangleF(.5f, .5f, Width - 1, Height - 1),
-            LogicalToDeviceUnits(iconOnly ? 10 : 9), fill, border);
+            LogicalToDeviceUnits(iconOnly ? 10 : 11), fill, border);
 
-        var bounds = ClientRectangle;
-        int pad = LogicalToDeviceUnits(8);
-        int iconSize = LogicalToDeviceUnits(iconOnly ? 18 : 17);
+        int pad = LogicalToDeviceUnits(leftAligned ? 11 : 7);
+        var bounds = Rectangle.Inflate(ClientRectangle, -pad, 0);
+        int iconSize = LogicalToDeviceUnits(iconOnly ? 19 : 16);
         if (glyph is { } symbol)
         {
-            int x = iconOnly ? (Width - iconSize) / 2 : pad;
+            var textSize = TextRenderer.MeasureText(e.Graphics, Text, Font, Size.Empty,
+                TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            int x = iconOnly ? (Width - iconSize) / 2 : leftAligned ? pad
+                : Math.Max(pad, (Width - iconSize - pad - textSize.Width) / 2);
             PopupIcons.Draw(e.Graphics, symbol, new Rectangle(x, (Height - iconSize) / 2, iconSize, iconSize), text);
             if (iconOnly)
                 return;
-            bounds.X += iconSize + pad * 2;
-            bounds.Width -= iconSize + pad * 2;
+            bounds = Rectangle.FromLTRB(x + iconSize + pad, 0, Width - pad, Height);
         }
+        if (bounds.Width <= 0)
+            return;
         TextRenderer.DrawText(e.Graphics, Text, Font, bounds, text,
-            (leftAligned ? TextFormatFlags.Left : TextFormatFlags.HorizontalCenter)
-            | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+            (leftAligned || glyph is not null ? TextFormatFlags.Left : TextFormatFlags.HorizontalCenter)
+            | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine
+            | (UseMnemonic ? TextFormatFlags.Default : TextFormatFlags.NoPrefix));
     }
 }
 
@@ -286,7 +424,7 @@ public sealed class PopupSlider : TrackBar
             return;
 
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        int thickness = LogicalToDeviceUnits(4);
+        int thickness = LogicalToDeviceUnits(6);
         using var track = new Pen(theme.Track, thickness) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         using var active = new Pen(Enabled ? theme.Accent : theme.Muted, thickness)
             { StartCap = LineCap.Round, EndCap = LineCap.Round };
@@ -295,12 +433,14 @@ public sealed class PopupSlider : TrackBar
         if (x != origin)
             e.Graphics.DrawLine(active, origin, y, x, y);
         int radius = LogicalToDeviceUnits(8);
-        Color thumbColor = Enabled ? theme.Accent : theme.Muted;
-        using var knob = new SolidBrush(thumbColor);
-        e.Graphics.FillEllipse(knob, x - radius, y - radius, radius * 2, radius * 2);
-        using var core = new SolidBrush(theme.Card);
-        int coreRadius = LogicalToDeviceUnits(3);
-        e.Graphics.FillEllipse(core, x - coreRadius, y - coreRadius, coreRadius * 2, coreRadius * 2);
+        var knobBounds = new Rectangle(x - radius, y - radius, radius * 2, radius * 2);
+        using var shadow = new SolidBrush(Color.FromArgb(45, Color.Black));
+        e.Graphics.FillEllipse(shadow, knobBounds.X, knobBounds.Y + LogicalToDeviceUnits(2), knobBounds.Width, knobBounds.Height);
+        using var knob = new SolidBrush(Enabled && !SystemInformation.HighContrast ? Color.White
+            : Enabled ? theme.OnAccent : theme.Track);
+        using var edge = new Pen(Enabled ? theme.Accent : theme.Muted);
+        e.Graphics.FillEllipse(knob, knobBounds);
+        e.Graphics.DrawEllipse(edge, knobBounds);
         if (Focused && ShowFocusCues)
         {
             using var focus = new Pen(theme.Text);

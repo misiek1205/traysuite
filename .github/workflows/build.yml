@@ -65,9 +65,14 @@ jobs:
         with:
           pattern: win-*
           path: artifacts/public
-      - run: python installer/build.py merge --scope public --inputs artifacts/public --output artifacts/release
+      - run: python installer/build.py merge --scope public --inputs artifacts/public --output artifacts/release --bundle
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: public-manifest
           path: artifacts/release/manifest.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: public-release
+          path: artifacts/release/TraySuite-public-release.zip
           if-no-files-found: error

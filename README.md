@@ -15,7 +15,7 @@ python installer/build.py build --scope public --runtime win-x64
 python installer/build.py build --scope public --runtime win-arm64
 python installer/build.py build --scope pro --runtime win-x64
 python installer/build.py build --scope pro --runtime win-arm64
-python installer/build.py merge --scope public --inputs artifacts/public --output artifacts/release
+python installer/build.py merge --scope public --inputs artifacts/public --output artifacts/release --bundle
 python installer/build.py merge --scope pro --inputs artifacts/pro --output artifacts/private-release
 ```
 
@@ -23,7 +23,7 @@ Add `--no-setup` when building the public packages on Linux or when you need a p
 
 The public workflow builds the installers and Free packages and merges their metadata into `manifest.json`. Run **Build private TraySuite Pro** in the Pro repository with the full public commit SHA to build and test both sets of Pro ZIPs and assemble `manifest-pro.json`. The public manifest leaves `download_url` and `sha256` empty for Pro packages. When merging the public manifest, pass `--pro-metadata artifacts/private-release/manifest-pro.json` to publish Pro package versions and sizes. Download URLs and checksums stay in the private manifest.
 
-By default, Hub fetches `manifest.json` and the Free packages from the latest GitHub release of `misiek1205/traysuite`. Upload the public manifest, both installers, and all Free ZIP archives to that release. Publish private release files through the Pro package source.
+By default, Hub fetches `manifest.json` and the Free packages from the latest GitHub release of `misiek1205/traysuite`, formerly `misiek1205/dimmli`. The workflow's `public-release` artifact contains `TraySuite-public-release.zip`. Extract it and upload its contents as individual GitHub Release assets. It includes the public manifest, both installers, all Free ZIP archives, and `SHA256SUMS.txt`. Publish private release files through the Pro package source.
 
 ## Local development
 

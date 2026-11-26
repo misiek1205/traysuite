@@ -21,7 +21,7 @@ ArchitecturesInstallIn64BitMode=x64os
 MinVersion=10.0.19045
 #endif
 AppMutex=Local\TraySuite.Hub
-SetupIconFile=..\public\Apps\Dimmli\Sun.ico
+SetupIconFile=..\public\Brand\TraySuite.Hub.ico
 UninstallDisplayIcon={app}\TraySuite.Hub.exe
 OutputBaseFilename=TraySuite-Hub-win-{#AppArchitecture}-Setup
 Compression=lzma2/max
