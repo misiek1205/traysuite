@@ -37,6 +37,18 @@ To uninstall, exit Dimmli and remove it from Windows **Installed apps**.
   device identifier. Saving updates the connected, identifiable monitors
   and keeps previously saved levels for disconnected displays.
 
+## Global keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl` + `Alt` + `B` | Open or close the panel |
+| `Ctrl` + `Alt` + `Page Up` / `Page Down` | Brighten or dim the controllable monitors by 5 percentage points |
+| `Ctrl` + `Alt` + `1` / `2` | Apply the saved Day or Evening profile |
+
+Shortcuts work while Dimmli is running in the notification area. Open
+**Keys** in the panel to turn them off or check whether Windows made a
+combination available. The setting persists across restarts.
+
 ## Display compatibility
 
 - **External monitors** use DDC/CI over the display connection. Dimmli
@@ -107,6 +119,11 @@ suwak wraca na środek. Aby zapisać ustawienia poszczególnych monitorów,
 ustaw ich suwaki, a potem kliknij **Zapisz dzień** lub **Zapisz wieczór**.
 Przyciski **Dzień** i **Wieczór** wczytują zapisane poziomy. Przy zapisie
 aplikacja zachowuje też wcześniejsze poziomy odłączonych monitorów.
+
+Skróty globalne działają, gdy Dimmli jest w zasobniku. `Ctrl+Alt+B` otwiera
+lub zamyka panel, `Ctrl+Alt+PgUp/PgDn` zmienia jasność o 5 punktów
+procentowych, a `Ctrl+Alt+1/2` włącza zapisany profil Dzień lub Wieczór.
+W zakładce **Skróty** można je wyłączyć i sprawdzić dostępność kombinacji.
 
 Monitory zewnętrzne korzystają z DDC/CI, a ekrany laptopów mogą korzystać
 z interfejsu WMI. Jeśli zewnętrzny monitor nie ma suwaka, sprawdź **DDC/CI**

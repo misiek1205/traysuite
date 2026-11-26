@@ -8,10 +8,12 @@ internal sealed class TrayApplication : ApplicationContext
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     // Keep the original Run value so the installer can adopt an existing portable setup.
     private const string StartupValueName = "Brightness";
+    private const string PreferencesKey = @"Software\Dimmli";
     private readonly NotifyIcon tray;
     private readonly ContextMenuStrip menu = new();
     private readonly Icon icon;
     private readonly BrightnessPanel panel;
+    private readonly GlobalShortcuts globalShortcuts;
     private readonly MonitorService service = new();
     // Keep profiles created by earlier releases under the previous app name.
     private readonly ProfileStore profileStore = new(Path.Combine(
@@ -24,6 +26,7 @@ internal sealed class TrayApplication : ApplicationContext
     private bool busy;
     private bool refreshRequested;
     private bool exiting;
+    private bool displaysReady;
     private long lastDismissal = -1000;
     private Point dismissalPoint;
     private string readyStatus = "";
@@ -33,7 +36,7 @@ internal sealed class TrayApplication : ApplicationContext
         using var resource = typeof(TrayApplication).Assembly.GetManifestResourceStream("Dimmli.Sun.ico")!;
         using var sourceIcon = new Icon(resource);
         icon = (Icon)sourceIcon.Clone();
-        panel = new BrightnessPanel(RequestRefresh, ApplyProfile, SaveProfile);
+        panel = new BrightnessPanel(RequestRefresh, ApplyProfile, SaveProfile, ToggleShortcuts);
         try
         {
             savedProfiles = profileStore.Load();
@@ -52,10 +55,19 @@ internal sealed class TrayApplication : ApplicationContext
         };
         // Create a window handle so notifications can marshal onto this message loop.
         _ = panel.Handle;
+        globalShortcuts = new GlobalShortcuts(HandleShortcut);
+        using (var preferences = Registry.CurrentUser.OpenSubKey(PreferencesKey))
+            globalShortcuts.SetEnabled(preferences?.GetValue("GlobalShortcuts") is not 0);
+        panel.UpdateShortcuts(globalShortcuts);
 
         var open = menu.Items.Add(Texts.Get("Open brightness panel", "Otwórz panel jasności"));
         open.Click += (_, _) => panel.Open(Cursor.Position);
         menu.Items.Add(Texts.Get("Refresh displays", "Odśwież monitory")).Click += (_, _) => RequestRefresh();
+        menu.Items.Add(Texts.Get("Keyboard shortcuts", "Skróty klawiaturowe")).Click += (_, _) =>
+        {
+            panel.Open(Cursor.Position);
+            panel.ShowShortcutGuide(true);
+        };
         var start = (ToolStripMenuItem)menu.Items.Add(Texts.Get("Start with Windows", "Uruchamiaj z Windows"));
         menu.Opening += (_, _) => start.Checked = StartsWithWindows();
         start.Click += (_, _) => ToggleStartup(start.Checked);
@@ -120,6 +132,7 @@ internal sealed class TrayApplication : ApplicationContext
             return;
 
         refreshRequested = true;
+        displaysReady = false;
         writeTimer.Stop();
         pending.Clear();
         panel.SetControlsEnabled(false);
@@ -152,6 +165,7 @@ internal sealed class TrayApplication : ApplicationContext
                     return;
 
                 panel.SetDisplays(displays, QueueBrightness);
+                displaysReady = true;
                 UpdateProfileAvailability();
                 panel.SetControlsEnabled(true);
                 int controllable = displays.Count(display => display.SetBrightness is not null);
@@ -193,6 +207,60 @@ internal sealed class TrayApplication : ApplicationContext
                 panel.BeginInvoke(ProcessWork);
             else if (pending.Count > 0)
                 writeTimer.Start();
+        }
+    }
+
+    private void HandleShortcut(ShortcutAction action)
+    {
+        if (exiting)
+            return;
+
+        if (action == ShortcutAction.Open)
+        {
+            if (panel.Visible)
+                panel.Hide();
+            else
+            {
+                var area = Screen.FromPoint(Cursor.Position).WorkingArea;
+                panel.Open(new Point(area.Right - 1, area.Bottom - 1));
+            }
+            return;
+        }
+
+        if (!displaysReady)
+            return;
+
+        switch (action)
+        {
+            case ShortcutAction.Brighter:
+                panel.ShiftBy(5);
+                break;
+            case ShortcutAction.Dimmer:
+                panel.ShiftBy(-5);
+                break;
+            case ShortcutAction.Day:
+                ApplyProfile(Profile.Day);
+                break;
+            case ShortcutAction.Evening:
+                ApplyProfile(Profile.Evening);
+                break;
+        }
+    }
+
+    private void ToggleShortcuts()
+    {
+        bool enable = !globalShortcuts.Enabled;
+        try
+        {
+            using var preferences = Registry.CurrentUser.CreateSubKey(PreferencesKey);
+            preferences.SetValue("GlobalShortcuts", enable ? 1 : 0, RegistryValueKind.DWord);
+            globalShortcuts.SetEnabled(enable);
+            panel.UpdateShortcuts(globalShortcuts);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            panel.SetStatus(Texts.Get("Could not save the shortcut setting.",
+                "Nie udało się zapisać ustawienia skrótów."));
         }
     }
 
@@ -279,6 +347,7 @@ internal sealed class TrayApplication : ApplicationContext
             SystemEvents.PowerModeChanged -= PowerChanged;
             topologyTimer.Dispose();
             writeTimer.Dispose();
+            globalShortcuts.Dispose();
             tray.Dispose();
             menu.Dispose();
             panel.Dispose();

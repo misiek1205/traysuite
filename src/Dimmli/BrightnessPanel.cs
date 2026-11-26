@@ -2,28 +2,35 @@ namespace Dimmli;
 
 internal sealed class BrightnessPanel : Form
 {
+    private static readonly PopupAppearance Theme = PopupAppearance.Current;
     private readonly TableLayoutPanel layout = new();
     private readonly Panel scroller = new();
+    private readonly TableLayoutPanel body = new();
     private readonly TableLayoutPanel rows = new();
-    private readonly TableLayoutPanel shortcuts = new();
-    private readonly PopupSlider master = new();
+    private readonly TableLayoutPanel overview = new();
+    private readonly ShortcutGuide guide;
+    private readonly PopupSlider master = new(transparent: true);
+    private readonly BrightnessMeter meter = new();
     private readonly Label offsetLabel = new();
     private readonly Button applyDay;
     private readonly Button applyEvening;
     private readonly Button saveDay;
     private readonly Button saveEvening;
+    private readonly PopupButton guideButton;
     private readonly Label status = new();
     private Dictionary<BrightnessRow, int>? groupStart;
     private bool masterKeyHeld;
-    private bool shortcutsRequested;
+    private bool overviewVisible;
+    private bool guideVisible;
     private Rectangle workingArea;
     private Point anchor;
-    private const int HeaderHeight = 78;
-    private const int RowHeight = 72;
-    private const int RowGap = 8;
-    private const int FooterHeight = 36;
+    private const int HeaderHeight = 77;
+    private const int OverviewHeight = 214;
+    private const int RowHeight = 87;
+    private const int RowGap = 9;
+    private const int FooterHeight = 55;
 
-    public BrightnessPanel(Action refresh, Action<Profile> apply, Action<Profile> save)
+    public BrightnessPanel(Action refresh, Action<Profile> apply, Action<Profile> save, Action? toggleShortcuts = null)
     {
         Text = "Dimmli";
         ShowInTaskbar = false;
@@ -33,101 +40,104 @@ internal sealed class BrightnessPanel : Form
         AutoScaleDimensions = new SizeF(96, 96);
         TopMost = true;
         KeyPreview = true;
-
-        var theme = PopupAppearance.Current;
         Font = PopupAppearance.CaptionFont;
-        BackColor = theme.Border;
-        ForeColor = theme.Text;
+        BackColor = Theme.Border;
+        ForeColor = Theme.Text;
         Padding = new Padding(1);
+
         layout.Dock = DockStyle.Fill;
-        layout.BackColor = theme.Background;
+        layout.BackColor = Theme.Background;
         layout.ColumnCount = 1;
-        layout.RowCount = 4;
+        layout.RowCount = 3;
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, HeaderHeight));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, FooterHeight));
         Controls.Add(layout);
 
         var header = new TableLayoutPanel
         {
-            ColumnCount = 3,
-            RowCount = 2,
-            Dock = DockStyle.Fill,
-            Padding = new Padding(18, 12, 16, 10),
-            Margin = Padding.Empty
+            ColumnCount = 3, RowCount = 2, Dock = DockStyle.Fill,
+            Padding = new Padding(20, 12, 20, 9), Margin = Padding.Empty
         };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
-        header.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
-        header.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 43));
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 64));
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
+        var tips = new ToolTip();
         using var resource = typeof(BrightnessPanel).Assembly.GetManifestResourceStream("Dimmli.Sun.ico")!;
         using var logo = new Icon(resource, 48, 48);
         var bitmap = logo.ToBitmap();
-        Disposed += (_, _) => bitmap.Dispose();
+        Disposed += (_, _) => { bitmap.Dispose(); tips.Dispose(); };
         var mark = new PictureBox
         {
             Image = bitmap, Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom,
-            Margin = new Padding(0, 5, 9, 5)
+            Margin = new Padding(0, 2, 12, 2)
         };
         header.Controls.Add(mark, 0, 0);
         header.SetRowSpan(mark, 2);
-        header.Controls.Add(new Label
+        header.Controls.Add(CreateLabel("Dimmli", Theme.Text, PopupAppearance.TitleFont, ContentAlignment.BottomLeft), 1, 0);
+        header.Controls.Add(CreateLabel(Texts.Get("Monitor brightness", "Jasność monitorów"),
+            Theme.Muted, PopupAppearance.CaptionFont, ContentAlignment.TopLeft), 1, 1);
+
+        var refreshButton = new PopupButton(PopupGlyph.Refresh, iconOnly: true)
         {
-            Text = "Dimmli", Font = PopupAppearance.TitleFont,
-            TextAlign = ContentAlignment.BottomLeft, Dock = DockStyle.Fill, Margin = Padding.Empty
-        }, 1, 0);
-        header.Controls.Add(new Label
-        {
-            Text = Texts.Get("Monitor brightness", "Jasność monitorów"), ForeColor = theme.Muted,
-            TextAlign = ContentAlignment.TopLeft, Dock = DockStyle.Fill, Margin = Padding.Empty
-        }, 1, 1);
-        var refreshButton = new PopupButton
-        {
-            Text = Texts.Get("Refresh", "Odśwież"),
-            Anchor = AnchorStyles.Left | AnchorStyles.Right,
-            Height = 33,
-            Margin = new Padding(0, 0, 0, 2)
+            Text = Texts.Get("Refresh displays", "Odśwież monitory"), Height = 40,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = Padding.Empty
         };
         refreshButton.Click += (_, _) => refresh();
+        tips.SetToolTip(refreshButton, refreshButton.Text);
         header.Controls.Add(refreshButton, 2, 0);
         header.SetRowSpan(refreshButton, 2);
         layout.Controls.Add(header, 0, 0);
 
-        shortcuts.Dock = DockStyle.Fill;
-        shortcuts.Margin = new Padding(16, 0, 16, 10);
-        shortcuts.ColumnCount = 1;
-        shortcuts.RowCount = 2;
-        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
-        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
-        layout.Controls.Add(shortcuts, 0, 1);
+        scroller.Margin = new Padding(19, 0, 19, 0);
+        scroller.Dock = DockStyle.Fill;
+        scroller.AutoScroll = true;
+        layout.Controls.Add(scroller, 0, 1);
+
+        body.ColumnCount = 1;
+        body.RowCount = 2;
+        body.AutoSize = true;
+        body.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        body.Dock = DockStyle.Top;
+        body.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+        body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        scroller.Controls.Add(body);
+
+        overview.Dock = DockStyle.Fill;
+        overview.Margin = Padding.Empty;
+        overview.ColumnCount = 1;
+        overview.RowCount = 2;
+        overview.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
+        overview.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        body.Controls.Add(overview, 0, 0);
 
         string allDisplaysLabel = Texts.Get("All monitors", "Wszystkie monitory");
-        var allDisplays = new PopupCard(theme.Highlight)
+        var featured = new PopupCard(Theme.Highlight, featured: true)
         {
-            BackColor = theme.Background, Dock = DockStyle.Fill,
-            Margin = new Padding(0, 0, 0, 6), Padding = new Padding(12, 6, 12, 3)
+            BackColor = Theme.Background, Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 10), Padding = new Padding(16, 12, 11, 8)
         };
         var masterLayout = new TableLayoutPanel
         {
-            ColumnCount = 2, RowCount = 2, Dock = DockStyle.Fill, BackColor = theme.Highlight,
+            ColumnCount = 2, RowCount = 3, Dock = DockStyle.Fill, BackColor = Color.Transparent,
             Margin = Padding.Empty
         };
         masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));
-        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 48));
-        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 52));
-        masterLayout.Controls.Add(new Label
-        {
-            Text = allDisplaysLabel, Dock = DockStyle.Fill, Font = PopupAppearance.LabelFont,
-            TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty
-        }, 0, 0);
+        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 39));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 24));
+        masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 37));
+        masterLayout.Controls.Add(CreateLabel(allDisplaysLabel, Theme.Text, PopupAppearance.ValueFont), 0, 0);
+
         offsetLabel.Dock = DockStyle.Fill;
-        offsetLabel.ForeColor = theme.Accent;
+        offsetLabel.ForeColor = Theme.Accent;
         offsetLabel.Font = PopupAppearance.LabelFont;
         offsetLabel.Margin = Padding.Empty;
-        offsetLabel.TextAlign = ContentAlignment.MiddleRight;
+        offsetLabel.TextAlign = ContentAlignment.MiddleLeft;
+        masterLayout.Controls.Add(offsetLabel, 0, 1);
+
         master.Dock = DockStyle.Fill;
         master.Margin = Padding.Empty;
         master.AutoSize = false;
@@ -151,74 +161,105 @@ internal sealed class BrightnessPanel : Form
         master.KeyUp += (_, _) => ResetMaster();
         master.LostFocus += (_, _) => ResetMaster();
         ResetMaster();
-        masterLayout.Controls.Add(master, 0, 1);
-        masterLayout.SetColumnSpan(master, 2);
-        masterLayout.Controls.Add(offsetLabel, 1, 0);
-        allDisplays.Controls.Add(masterLayout);
-        shortcuts.Controls.Add(allDisplays, 0, 0);
+        masterLayout.Controls.Add(master, 0, 2);
+
+        meter.TabStop = false;
+        meter.Dock = DockStyle.Fill;
+        meter.Margin = Padding.Empty;
+        masterLayout.Controls.Add(meter, 1, 0);
+        masterLayout.SetRowSpan(meter, 3);
+        featured.Controls.Add(masterLayout);
+        overview.Controls.Add(featured, 0, 0);
 
         var profiles = new TableLayoutPanel
         {
-            ColumnCount = 1, RowCount = 2, Dock = DockStyle.Fill, Margin = Padding.Empty
+            ColumnCount = 2, RowCount = 2, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 11)
         };
-        profiles.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
-        profiles.RowStyles.Add(new RowStyle(SizeType.Percent, 64));
-        profiles.Controls.Add(new Label
-        {
-            Text = Texts.Get("Brightness profiles", "Profile jasności"), ForeColor = theme.Muted,
-            Dock = DockStyle.Fill, Margin = new Padding(1, 0, 0, 0)
-        }, 0, 0);
-        var buttons = new TableLayoutPanel
-        {
-            ColumnCount = 5, RowCount = 1, Dock = DockStyle.Fill, Margin = Padding.Empty
-        };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 23));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 10));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 23));
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27));
-        applyDay = AddProfileButton(Texts.Get("Day", "Dzień"), 0, () => apply(Profile.Day));
-        saveDay = AddProfileButton(Texts.Get("Save day", "Zapisz dzień"), 1, () => save(Profile.Day));
-        applyEvening = AddProfileButton(Texts.Get("Evening", "Wieczór"), 3, () => apply(Profile.Evening));
-        saveEvening = AddProfileButton(Texts.Get("Save evening", "Zapisz wieczór"), 4, () => save(Profile.Evening));
-        profiles.Controls.Add(buttons, 0, 1);
-        shortcuts.Controls.Add(profiles, 0, 1);
+        profiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        profiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        profiles.RowStyles.Add(new RowStyle(SizeType.Percent, 32));
+        profiles.RowStyles.Add(new RowStyle(SizeType.Percent, 68));
+        var profilesTitle = CreateLabel(Texts.Get("Profiles", "Profile"), Theme.Muted, PopupAppearance.CaptionFont);
+        profiles.Controls.Add(profilesTitle, 0, 0);
+        profiles.SetColumnSpan(profilesTitle, 2);
+        (applyDay, saveDay) = MakeProfile(Profile.Day, 0, PopupGlyph.Sun, Theme.Day,
+            Texts.Get("Day", "Dzień"), Texts.Get("Save day", "Zapisz dzień"));
+        (applyEvening, saveEvening) = MakeProfile(Profile.Evening, 1, PopupGlyph.Moon, Theme.Evening,
+            Texts.Get("Evening", "Wieczór"), Texts.Get("Save evening", "Zapisz wieczór"));
+        overview.Controls.Add(profiles, 0, 1);
 
-        Button AddProfileButton(string text, int column, Action action)
+        (Button activate, Button store) MakeProfile(Profile profile, int column, PopupGlyph glyph,
+            Color color, string label, string saveLabel)
         {
-            var button = new PopupButton
+            var pair = new TableLayoutPanel
             {
-                Text = text, Dock = DockStyle.Fill, Margin = new Padding(0, 1, 2, 1),
-                Font = column is 0 or 3 ? PopupAppearance.LabelFont : PopupAppearance.CaptionFont,
-                ForeColor = column is 0 or 3 ? theme.Accent : theme.Text
+                ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill,
+                Margin = column == 0 ? new Padding(0, 0, 5, 0) : new Padding(5, 0, 0, 0)
             };
-            button.Click += (_, _) => action();
-            buttons.Controls.Add(button, column, 0);
-            return button;
+            pair.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            pair.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
+            var activate = new PopupButton(glyph, leftAligned: true)
+            {
+                Text = label, ForeColor = color, Font = PopupAppearance.LabelFont,
+                Dock = DockStyle.Fill, Margin = new Padding(0, 0, 5, 0)
+            };
+            var store = new PopupButton(PopupGlyph.Save, iconOnly: true)
+            {
+                Text = saveLabel, ForeColor = Theme.Muted, Dock = DockStyle.Fill, Margin = Padding.Empty
+            };
+            tips.SetToolTip(store, saveLabel);
+            activate.Click += (_, _) => apply(profile);
+            store.Click += (_, _) => save(profile);
+            pair.Controls.Add(activate, 0, 0);
+            pair.Controls.Add(store, 1, 0);
+            profiles.Controls.Add(pair, column, 1);
+            return (activate, store);
         }
 
-        scroller.Margin = new Padding(16, 0, 16, 0);
-        scroller.Dock = DockStyle.Fill;
-        scroller.AutoScroll = true;
         rows.ColumnCount = 1;
         rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         rows.AutoSize = true;
         rows.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        rows.Dock = DockStyle.Top;
-        scroller.Controls.Add(rows);
-        layout.Controls.Add(scroller, 0, 2);
+        rows.Dock = DockStyle.Fill;
+        rows.Margin = Padding.Empty;
+        body.Controls.Add(rows, 0, 1);
 
+        guide = new ShortcutGuide(() => toggleShortcuts?.Invoke()) { Visible = false };
+        scroller.Controls.Add(guide);
+
+        var footer = new TableLayoutPanel
+        {
+            ColumnCount = 2, Dock = DockStyle.Fill, Margin = Padding.Empty,
+            Padding = new Padding(20, 6, 20, 10)
+        };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
         status.Dock = DockStyle.Fill;
-        status.ForeColor = theme.Muted;
+        status.ForeColor = Theme.Muted;
         status.TextAlign = ContentAlignment.MiddleLeft;
-        status.Padding = new Padding(16, 0, 6, 0);
-        status.Margin = Padding.Empty;
+        status.Margin = new Padding(0, 0, 8, 0);
         status.AutoEllipsis = true;
-        layout.Controls.Add(status, 0, 3);
-        shortcuts.Visible = false;
+        footer.Controls.Add(status, 0, 0);
+        guideButton = new PopupButton(PopupGlyph.Keyboard)
+        {
+            Text = Texts.Get("Keys", "Skróty"),
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty
+        };
+        guideButton.Click += (_, _) => ShowShortcutGuide(!guideVisible);
+        footer.Controls.Add(guideButton, 1, 0);
+        layout.Controls.Add(footer, 0, 2);
+        overview.Visible = false;
 
         DpiChanged += (_, _) => BeginInvoke(ResizeAndPlace);
     }
+
+    private static Label CreateLabel(string text, Color color, Font font,
+        ContentAlignment align = ContentAlignment.MiddleLeft) => new()
+    {
+        Text = text, ForeColor = color, Font = font, TextAlign = align, Dock = DockStyle.Fill,
+        Margin = Padding.Empty, AutoEllipsis = true
+    };
 
     public void Open(Point position)
     {
@@ -261,14 +302,14 @@ internal sealed class BrightnessPanel : Form
 
         int S(int units) => LogicalToDeviceUnits(units);
         int gap = S(8);
-        int width = Math.Min(S(428), Math.Max(1, workingArea.Width - 2 * gap));
-        int shortcutsHeight = shortcutsRequested ? 132 : 0;
-        int height = Math.Min(S(2 + HeaderHeight + FooterHeight + shortcutsHeight
-            + Math.Max(1, rows.RowCount) * (RowHeight + RowGap)),
+        int width = Math.Min(S(468), Math.Max(1, workingArea.Width - 2 * gap));
+        int overviewHeight = overviewVisible ? OverviewHeight : 0;
+        int bodyHeight = guideVisible ? 320 : overviewHeight + Math.Max(1, rows.RowCount) * (RowHeight + RowGap);
+        int height = Math.Min(S(2 + HeaderHeight + FooterHeight + bodyHeight),
             Math.Max(1, workingArea.Height - 2 * gap));
         layout.RowStyles[0].Height = S(HeaderHeight);
-        layout.RowStyles[1].Height = S(shortcutsHeight);
-        layout.RowStyles[3].Height = S(FooterHeight);
+        body.RowStyles[0].Height = S(overviewHeight);
+        layout.RowStyles[2].Height = S(FooterHeight);
         foreach (Control row in rows.Controls)
             row.Height = S(RowHeight);
 
@@ -300,6 +341,7 @@ internal sealed class BrightnessPanel : Form
         {
             var row = new BrightnessRow(display);
             row.BrightnessChanged += changed;
+            row.TargetChanged += UpdateMeter;
             rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             rows.Controls.Add(row, 0, rows.RowCount++);
         }
@@ -320,9 +362,10 @@ internal sealed class BrightnessPanel : Form
         }
 
         rows.ResumeLayout(true);
+        UpdateMeter();
         int controllable = ControllableRows.Count();
-        shortcutsRequested = controllable > 0;
-        shortcuts.Visible = shortcutsRequested;
+        overviewVisible = controllable > 0;
+        overview.Visible = overviewVisible;
         master.Enabled = controllable > 1;
         ResizeAndPlace();
     }
@@ -345,9 +388,33 @@ internal sealed class BrightnessPanel : Form
 
     public void SetControlsEnabled(bool enabled)
     {
-        rows.Enabled = shortcuts.Enabled = enabled;
+        rows.Enabled = overview.Enabled = enabled;
         if (!enabled)
             ResetMaster();
+    }
+
+    public void UpdateShortcuts(GlobalShortcuts shortcuts) => guide.UpdateBindings(shortcuts);
+
+    public void ShowShortcutGuide(bool visible)
+    {
+        guideVisible = visible;
+        body.Visible = !visible;
+        guide.Visible = visible;
+        scroller.AutoScrollPosition = Point.Empty;
+        guideButton.Text = visible ? Texts.Get("Back", "Wróć") : Texts.Get("Keys", "Skróty");
+        ResizeAndPlace();
+    }
+
+    public void ShiftBy(int delta)
+    {
+        ResetMaster();
+        foreach (var row in ControllableRows)
+            row.SetTarget(Math.Clamp(row.Target + delta, 0, 100));
+    }
+
+    private void UpdateMeter()
+    {
+        meter.UpdateLevel((int)Math.Round(ControllableRows.Select(row => row.Target).DefaultIfEmpty().Average()));
     }
 
     private void ShiftDisplays()
@@ -374,7 +441,10 @@ internal sealed class BrightnessPanel : Form
         if (keyData != Keys.Escape)
             return base.ProcessCmdKey(ref msg, keyData);
 
-        Hide();
+        if (guideVisible)
+            ShowShortcutGuide(false);
+        else
+            Hide();
         return true;
     }
 }
@@ -387,6 +457,7 @@ internal sealed class BrightnessRow : PopupCard
     public int Confirmed { get; private set; }
     public int Target => slider.Value;
     public event Action<BrightnessRow, int>? BrightnessChanged;
+    public event Action? TargetChanged;
 
     public BrightnessRow(Display display) : base(PopupAppearance.Current.Card)
     {
@@ -394,20 +465,21 @@ internal sealed class BrightnessRow : PopupCard
         Confirmed = Math.Clamp(display.Brightness, 0, 100);
         var theme = PopupAppearance.Current;
         BackColor = theme.Background;
-        Height = 72;
+        Height = 87;
         Dock = DockStyle.Top;
-        Margin = new Padding(0, 0, 0, 8);
-        Padding = new Padding(12, 7, 12, 5);
+        Margin = new Padding(0, 0, 0, 9);
+        Padding = new Padding(14, 7, 15, 7);
 
         var card = new TableLayoutPanel
         {
-            ColumnCount = 2,
+            ColumnCount = 3,
             RowCount = 2,
             Dock = DockStyle.Fill,
             BackColor = theme.Card
         };
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
         card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60));
+        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 65));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         Controls.Add(card);
@@ -420,14 +492,18 @@ internal sealed class BrightnessRow : PopupCard
             TextAlign = ContentAlignment.MiddleLeft,
             Margin = Padding.Empty
         };
-        card.Controls.Add(name, 0, 0);
+        card.Controls.Add(new PopupIcon(PopupGlyph.Display, theme.Accent)
+        {
+            Dock = DockStyle.Fill, TabStop = false, Margin = new Padding(0, 0, 10, 0)
+        }, 0, 0);
+        card.Controls.Add(name, 1, 0);
 
         valueLabel = new Label
         {
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleRight,
             Margin = Padding.Empty,
-            Font = PopupAppearance.LabelFont,
+            Font = PopupAppearance.ValueFont,
             ForeColor = theme.Accent,
             Text = $"{Confirmed}%"
         };
@@ -456,19 +532,20 @@ internal sealed class BrightnessRow : PopupCard
                 Text = Texts.Get("Brightness control unavailable", "Regulacja jasności niedostępna")
             };
             card.Controls.Add(unavailable, 0, 1);
-            card.SetColumnSpan(unavailable, 2);
+            card.SetColumnSpan(unavailable, 3);
             slider.Dispose();
             valueLabel.Dispose();
             return;
         }
 
-        card.Controls.Add(valueLabel, 1, 0);
+        card.Controls.Add(valueLabel, 2, 0);
         card.Controls.Add(slider, 0, 1);
-        card.SetColumnSpan(slider, 2);
+        card.SetColumnSpan(slider, 3);
         slider.Scroll += (_, _) =>
         {
             valueLabel.Text = $"{slider.Value}%";
             BrightnessChanged?.Invoke(this, slider.Value);
+            TargetChanged?.Invoke();
         };
     }
 
@@ -480,6 +557,7 @@ internal sealed class BrightnessRow : PopupCard
         slider.Value = value;
         valueLabel.Text = $"{value}%";
         BrightnessChanged?.Invoke(this, value);
+        TargetChanged?.Invoke();
     }
 
     public void ShowResult(int? brightness, bool pending)
@@ -491,5 +569,6 @@ internal sealed class BrightnessRow : PopupCard
 
         slider.Value = Confirmed;
         valueLabel.Text = $"{Confirmed}%";
+        TargetChanged?.Invoke();
     }
 }
