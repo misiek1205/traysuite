@@ -5,12 +5,22 @@ internal sealed class BrightnessPanel : Form
     private readonly TableLayoutPanel layout = new();
     private readonly Panel scroller = new();
     private readonly TableLayoutPanel rows = new();
+    private readonly TableLayoutPanel shortcuts = new();
+    private readonly TrackBar master = new();
+    private readonly Label offsetLabel = new();
+    private readonly Button applyDay;
+    private readonly Button applyEvening;
+    private readonly Button saveDay;
+    private readonly Button saveEvening;
     private readonly Label status = new();
+    private Dictionary<BrightnessRow, int>? groupStart;
+    private bool masterKeyHeld;
+    private bool shortcutsRequested;
     private Rectangle workingArea;
     private Point anchor;
     private const int RowHeight = 76;
 
-    public BrightnessPanel(Action refresh)
+    public BrightnessPanel(Action refresh, Action<Profile> apply, Action<Profile> save)
     {
         Text = "TrayLuminance";
         ShowInTaskbar = false;
@@ -26,8 +36,9 @@ internal sealed class BrightnessPanel : Form
         layout.Dock = DockStyle.Fill;
         layout.BackColor = SystemColors.Window;
         layout.ColumnCount = 1;
-        layout.RowCount = 3;
+        layout.RowCount = 4;
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         Controls.Add(layout);
@@ -61,6 +72,70 @@ internal sealed class BrightnessPanel : Form
         header.Controls.Add(refreshButton, 1, 0);
         layout.Controls.Add(header, 0, 0);
 
+        shortcuts.Dock = DockStyle.Fill;
+        shortcuts.Margin = new Padding(12, 0, 12, 0);
+        shortcuts.ColumnCount = 1;
+        shortcuts.RowCount = 2;
+        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
+        shortcuts.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
+        layout.Controls.Add(shortcuts, 0, 1);
+
+        var allDisplays = new GroupBox
+        {
+            Text = Texts.Get("All monitors", "Wszystkie monitory"),
+            Dock = DockStyle.Fill
+        };
+        var masterLayout = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill };
+        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
+        offsetLabel.Dock = DockStyle.Fill;
+        offsetLabel.TextAlign = ContentAlignment.MiddleRight;
+        master.Dock = DockStyle.Fill;
+        master.AutoSize = false;
+        master.Minimum = -100;
+        master.Maximum = 100;
+        master.SmallChange = 1;
+        master.LargeChange = 10;
+        master.TickStyle = TickStyle.None;
+        master.AccessibleName = allDisplays.Text;
+        master.AccessibleDescription = Texts.Get("Change each monitor by the same amount.",
+            "Zmień jasność każdego monitora o tę samą wartość.");
+        master.Scroll += (_, _) => ShiftDisplays();
+        master.MouseUp += (_, _) => ResetMaster();
+        master.MouseCaptureChanged += (_, _) =>
+        {
+            if ((Control.MouseButtons & MouseButtons.Left) == 0)
+                ResetMaster();
+        };
+        master.KeyDown += (_, args) => masterKeyHeld = args.KeyCode is Keys.Left or Keys.Right
+            or Keys.Up or Keys.Down or Keys.PageUp or Keys.PageDown or Keys.Home or Keys.End;
+        master.KeyUp += (_, _) => ResetMaster();
+        master.LostFocus += (_, _) => ResetMaster();
+        ResetMaster();
+        masterLayout.Controls.Add(master, 0, 0);
+        masterLayout.Controls.Add(offsetLabel, 1, 0);
+        allDisplays.Controls.Add(masterLayout);
+        shortcuts.Controls.Add(allDisplays, 0, 0);
+
+        var profiles = new GroupBox { Text = Texts.Get("Brightness profiles", "Profile jasności"), Dock = DockStyle.Fill };
+        var buttons = new TableLayoutPanel { ColumnCount = 4, RowCount = 1, Dock = DockStyle.Fill };
+        for (int column = 0; column < buttons.ColumnCount; column++)
+            buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        applyDay = AddProfileButton(Texts.Get("Day", "Dzień"), 0, () => apply(Profile.Day));
+        saveDay = AddProfileButton(Texts.Get("Save day", "Zapisz dzień"), 1, () => save(Profile.Day));
+        applyEvening = AddProfileButton(Texts.Get("Evening", "Wieczór"), 2, () => apply(Profile.Evening));
+        saveEvening = AddProfileButton(Texts.Get("Save evening", "Zapisz wieczór"), 3, () => save(Profile.Evening));
+        profiles.Controls.Add(buttons);
+        shortcuts.Controls.Add(profiles, 0, 1);
+
+        Button AddProfileButton(string text, int column, Action action)
+        {
+            var button = new Button { Text = text, Dock = DockStyle.Fill, Margin = new Padding(2, 0, 2, 2) };
+            button.Click += (_, _) => action();
+            buttons.Controls.Add(button, column, 0);
+            return button;
+        }
+
         scroller.Margin = Padding.Empty;
         scroller.Dock = DockStyle.Fill;
         scroller.AutoScroll = true;
@@ -70,7 +145,7 @@ internal sealed class BrightnessPanel : Form
         rows.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         rows.Dock = DockStyle.Top;
         scroller.Controls.Add(rows);
-        layout.Controls.Add(scroller, 0, 1);
+        layout.Controls.Add(scroller, 0, 2);
 
         status.Dock = DockStyle.Fill;
         status.BackColor = SystemColors.Control;
@@ -78,7 +153,8 @@ internal sealed class BrightnessPanel : Form
         status.Padding = new Padding(16, 0, 6, 0);
         status.Margin = Padding.Empty;
         status.AutoEllipsis = true;
-        layout.Controls.Add(status, 0, 2);
+        layout.Controls.Add(status, 0, 3);
+        shortcuts.Visible = false;
 
         DpiChanged += (_, _) => BeginInvoke(ResizeAndPlace);
     }
@@ -104,10 +180,12 @@ internal sealed class BrightnessPanel : Form
         int S(int units) => LogicalToDeviceUnits(units);
         int gap = S(8);
         int width = Math.Min(S(428), Math.Max(1, workingArea.Width - 2 * gap));
-        int height = Math.Min(S(92 + Math.Max(1, rows.RowCount) * RowHeight),
+        int shortcutsHeight = shortcutsRequested ? 116 : 0;
+        int height = Math.Min(S(92 + shortcutsHeight + Math.Max(1, rows.RowCount) * RowHeight),
             Math.Max(1, workingArea.Height - 2 * gap));
         layout.RowStyles[0].Height = S(56);
-        layout.RowStyles[2].Height = S(34);
+        layout.RowStyles[1].Height = S(shortcutsHeight);
+        layout.RowStyles[3].Height = S(34);
         ((TableLayoutPanel)layout.GetControlFromPosition(0, 0)!).ColumnStyles[1].Width = S(106);
         foreach (Control row in rows.Controls)
             row.Height = S(RowHeight);
@@ -129,6 +207,7 @@ internal sealed class BrightnessPanel : Form
 
     public void SetDisplays(IReadOnlyList<Display> displays, Action<BrightnessRow, int> changed)
     {
+        ResetMaster();
         rows.SuspendLayout();
         while (rows.Controls.Count > 0)
             rows.Controls[0].Dispose();
@@ -159,10 +238,54 @@ internal sealed class BrightnessPanel : Form
         }
 
         rows.ResumeLayout(true);
+        int controllable = ControllableRows.Count();
+        shortcutsRequested = controllable > 0;
+        shortcuts.Visible = shortcutsRequested;
+        master.Enabled = controllable > 1;
         ResizeAndPlace();
     }
 
-    public void SetControlsEnabled(bool enabled) => rows.Enabled = enabled;
+    private IEnumerable<BrightnessRow> ControllableRows =>
+        rows.Controls.OfType<BrightnessRow>().Where(row => row.Display.SetBrightness is not null);
+
+    public Dictionary<string, BrightnessRow> ProfileRows() =>
+        ControllableRows.Where(row => row.Display.Id is not null)
+            .GroupBy(row => row.Display.Id!, StringComparer.Ordinal)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+
+    public void SetProfileAvailability(bool canSave, bool canApplyDay, bool canApplyEvening)
+    {
+        saveDay.Enabled = saveEvening.Enabled = canSave;
+        applyDay.Enabled = canApplyDay;
+        applyEvening.Enabled = canApplyEvening;
+    }
+
+    public void SetControlsEnabled(bool enabled)
+    {
+        rows.Enabled = shortcuts.Enabled = enabled;
+        if (!enabled)
+            ResetMaster();
+    }
+
+    private void ShiftDisplays()
+    {
+        groupStart ??= ControllableRows.ToDictionary(row => row, row => row.Target);
+        int shift = master.Value;
+        offsetLabel.Text = shift.ToString("+0;-0;0") + " " + Texts.Get("pp", "p.p.");
+        foreach (var (row, start) in groupStart)
+            row.SetTarget(Math.Clamp(start + shift, 0, 100));
+        if (!masterKeyHeld && (Control.MouseButtons & MouseButtons.Left) == 0)
+            ResetMaster();
+    }
+
+    private void ResetMaster()
+    {
+        groupStart = null;
+        masterKeyHeld = false;
+        master.Value = 0;
+        offsetLabel.Text = "0 " + Texts.Get("pp", "p.p.");
+    }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
@@ -180,6 +303,7 @@ internal sealed class BrightnessRow : Panel
     private readonly Label valueLabel;
     public Display Display { get; }
     public int Confirmed { get; private set; }
+    public int Target => slider.Value;
     public event Action<BrightnessRow, int>? BrightnessChanged;
 
     public BrightnessRow(Display display)
@@ -258,6 +382,16 @@ internal sealed class BrightnessRow : Panel
             valueLabel.Text = $"{slider.Value}%";
             BrightnessChanged?.Invoke(this, slider.Value);
         };
+    }
+
+    public void SetTarget(int value)
+    {
+        if (slider.Value == value)
+            return;
+
+        slider.Value = value;
+        valueLabel.Text = $"{value}%";
+        BrightnessChanged?.Invoke(this, value);
     }
 
     public void ShowResult(int? brightness, bool pending)

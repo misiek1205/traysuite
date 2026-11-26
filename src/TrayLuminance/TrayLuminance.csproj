@@ -10,7 +10,7 @@
     <Product>TrayLuminance</Product>
     <Description>Windows monitor brightness control from the system tray</Description>
     <ApplicationIcon>Sun.ico</ApplicationIcon>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="Sun.ico" LogicalName="TrayLuminance.Sun.ico" />

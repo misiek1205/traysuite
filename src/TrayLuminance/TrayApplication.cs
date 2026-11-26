@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Text.Json;
 
 namespace TrayLuminance;
 
@@ -12,6 +13,10 @@ internal sealed class TrayApplication : ApplicationContext
     private readonly Icon icon;
     private readonly BrightnessPanel panel;
     private readonly MonitorService service = new();
+    private readonly ProfileStore profileStore = new(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TrayLuminance", "profiles.json"));
+    private Dictionary<Profile, Dictionary<string, int>> savedProfiles = [];
+    private bool profileReadFailed;
     private readonly System.Windows.Forms.Timer writeTimer = new() { Interval = 90 };
     private readonly System.Windows.Forms.Timer topologyTimer = new() { Interval = 800 };
     private readonly Dictionary<BrightnessRow, int> pending = [];
@@ -27,7 +32,15 @@ internal sealed class TrayApplication : ApplicationContext
         using var resource = typeof(TrayApplication).Assembly.GetManifestResourceStream("TrayLuminance.Sun.ico")!;
         using var sourceIcon = new Icon(resource);
         icon = (Icon)sourceIcon.Clone();
-        panel = new BrightnessPanel(RequestRefresh);
+        panel = new BrightnessPanel(RequestRefresh, ApplyProfile, SaveProfile);
+        try
+        {
+            savedProfiles = profileStore.Load();
+        }
+        catch (Exception error) when (IsProfileError(error))
+        {
+            profileReadFailed = true;
+        }
         panel.Deactivate += (_, _) =>
         {
             if (!panel.Visible)
@@ -138,13 +151,16 @@ internal sealed class TrayApplication : ApplicationContext
                     return;
 
                 panel.SetDisplays(displays, QueueBrightness);
+                UpdateProfileAvailability();
                 panel.SetControlsEnabled(true);
                 int controllable = displays.Count(display => display.SetBrightness is not null);
                 readyStatus = controllable > 0
                     ? Texts.Get($"Displays with brightness control: {controllable}/{displays.Count}",
                         $"Monitory z regulacją jasności: {controllable}/{displays.Count}")
                     : Texts.Get("Check DDC/CI in the monitor menu.", "Sprawdź DDC/CI w menu monitora.");
-                panel.SetStatus(readyStatus);
+                panel.SetStatus(profileReadFailed && controllable > 0
+                    ? Texts.Get("Could not read brightness profiles.", "Nie udało się odczytać profili jasności.")
+                    : readyStatus);
             }
             else if (pending.Count > 0)
             {
@@ -178,6 +194,49 @@ internal sealed class TrayApplication : ApplicationContext
                 writeTimer.Start();
         }
     }
+
+    private void UpdateProfileAvailability()
+    {
+        var connected = panel.ProfileRows();
+        panel.SetProfileAvailability(connected.Count > 0, HasMatch(Profile.Day), HasMatch(Profile.Evening));
+
+        bool HasMatch(Profile profile) => savedProfiles.TryGetValue(profile, out var targets)
+            && connected.Keys.Any(targets.ContainsKey);
+    }
+
+    private void ApplyProfile(Profile profile)
+    {
+        if (!savedProfiles.TryGetValue(profile, out var targets))
+            return;
+
+        foreach (var (id, row) in panel.ProfileRows())
+            if (targets.TryGetValue(id, out int level))
+                row.SetTarget(level);
+    }
+
+    private void SaveProfile(Profile profile)
+    {
+        var rows = panel.ProfileRows();
+        if (rows.Count == 0)
+            return;
+
+        try
+        {
+            savedProfiles = profileStore.Save(profile, rows.ToDictionary(pair => pair.Key, pair => pair.Value.Target));
+            profileReadFailed = false;
+            UpdateProfileAvailability();
+            panel.SetStatus(profile == Profile.Day
+                ? Texts.Get("Day profile saved.", "Profil Dzień zapisany.")
+                : Texts.Get("Evening profile saved.", "Profil Wieczór zapisany."));
+        }
+        catch (Exception error) when (IsProfileError(error))
+        {
+            panel.SetStatus(Texts.Get("Could not save the brightness profile.", "Nie udało się zapisać profilu jasności."));
+        }
+    }
+
+    private static bool IsProfileError(Exception error) =>
+        error is IOException or UnauthorizedAccessException or JsonException;
 
     private static bool StartsWithWindows()
     {

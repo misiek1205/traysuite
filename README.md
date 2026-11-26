@@ -25,6 +25,17 @@ To update an installed copy, choose **Exit** from the sun icon's right-click
 menu and run the new installer. It keeps your current startup preference.
 To uninstall, exit TrayLuminance and remove it from Windows **Installed apps**.
 
+## Adjust displays together and save profiles
+
+- Drag **All monitors** to add or subtract the same number of percentage
+  points from every controllable display. Individual values stop at 0% or
+  100%. The slider returns to the center when you release it.
+- Set the individual sliders, then click **Save day** or **Save evening**.
+  Click **Day** or **Evening** to restore the saved levels. Profiles are
+  stored on this Windows account and match displays by their Windows
+  device identifier. Saving updates the connected, identifiable monitors
+  and keeps previously saved levels for disconnected displays.
+
 ## Display compatibility
 
 - **External monitors** use DDC/CI over the display connection. TrayLuminance
@@ -88,6 +99,13 @@ Interfejs używa języka polskiego, gdy taki jest język systemu.
 Przed instalacją nowszej wersji wybierz **Zakończ** z menu ikony słońca.
 Aktualizacja zachowa ustawienie autostartu. Aplikację odinstalujesz przez
 **Zainstalowane aplikacje** w ustawieniach Windows.
+
+Suwak **Wszystkie monitory** zmienia jasność każdego obsługiwanego ekranu
+o tę samą liczbę punktów procentowych, w granicach 0–100%. Po puszczeniu
+suwak wraca na środek. Aby zapisać ustawienia poszczególnych monitorów,
+ustaw ich suwaki, a potem kliknij **Zapisz dzień** lub **Zapisz wieczór**.
+Przyciski **Dzień** i **Wieczór** wczytują zapisane poziomy. Przy zapisie
+aplikacja zachowuje też wcześniejsze poziomy odłączonych monitorów.
 
 Monitory zewnętrzne korzystają z DDC/CI, a ekrany laptopów mogą korzystać
 z interfejsu WMI. Jeśli zewnętrzny monitor nie ma suwaka, sprawdź **DDC/CI**

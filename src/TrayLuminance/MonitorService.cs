@@ -4,7 +4,7 @@ using static TrayLuminance.MonitorNative;
 
 namespace TrayLuminance;
 
-internal sealed record Display(string Name, int Brightness, Func<int, int?>? SetBrightness);
+internal sealed record Display(string Name, int Brightness, Func<int, int?>? SetBrightness, string? Id = null);
 
 internal sealed class MonitorService : IDisposable
 {
@@ -64,7 +64,8 @@ internal sealed class MonitorService : IDisposable
                 }
 
                 string name = NameOrDefault(screen.Description, match?.Description);
-                displays.Add(DiscoverDdc(screen.Handle, name));
+                string id = InterfaceToInstance(match?.Id);
+                displays.Add(DiscoverDdc(screen.Handle, name) with { Id = id.Length == 0 ? null : id });
             }
         }
 
@@ -140,7 +141,7 @@ internal sealed class MonitorService : IDisposable
                     int suffix = instance.LastIndexOf('_');
                     string id = suffix > instance.LastIndexOf('\\') ? instance[..suffix] : instance;
                     panels[id] = new Display(Texts.Get("Built-in display", "Ekran wbudowany"), current,
-                        percent => SetPanelBrightness(path, percent, levels));
+                        percent => SetPanelBrightness(path, percent, levels), id.ToUpperInvariant());
                 }
             }
         }
@@ -195,7 +196,8 @@ internal sealed class MonitorService : IDisposable
     private static string InterfaceToInstance(string? path)
     {
         string[] parts = path?.Split('#') ?? [];
-        return parts.Length >= 3 ? $@"DISPLAY\{parts[1]}\{parts[2]}" : "";
+        return parts.Length >= 3 && parts[1].Length > 0 && parts[2].Length > 0
+            ? $@"DISPLAY\{parts[1]}\{parts[2]}".ToUpperInvariant() : "";
     }
 
     private static string NameOrDefault(string? name, string? fallback = null) =>
