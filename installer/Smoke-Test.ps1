@@ -7,6 +7,7 @@
 )
 
 $ErrorActionPreference = 'Stop'
+if (!$env:RUNNER_TEMP) { throw 'Use a clean Windows runner profile for this test.' }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type @'
 using System;
@@ -26,6 +27,7 @@ $hub = Join-Path $hubDir 'TraySuite.Hub.exe'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $appsDir = Join-Path $env:LOCALAPPDATA 'TraySuite\Apps'
 $hubProcess = $null
+$testedModules = [System.Collections.Generic.List[string]]::new()
 
 function Wait-For([string]$Description, [scriptblock]$Probe, [int]$Seconds = 25) {
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
@@ -105,6 +107,7 @@ try {
         $moduleDirectory = Join-Path $appsDir $name
         $exe = Join-Path $moduleDirectory "$name.exe"
         if (Test-Path $moduleDirectory) { throw "$moduleDirectory already exists before the smoke test." }
+        $testedModules.Add($name)
         Invoke-HubButton @("Install $name", "Zainstaluj $name")
         Wait-For "$name installation" { Test-Path -LiteralPath $exe } | Out-Null
         Write-Host "Hub installed $name ($Runtime)."
@@ -112,6 +115,8 @@ try {
 
         Invoke-HubButton @("Open $name", "Otwórz $name")
         $module = Wait-For "$name process launched by Hub" { Get-ModuleProcess $name $exe }
+        # Retain a process handle so Windows PowerShell can read the exit code after removal.
+        $null = $module.Handle
         if ($module.WaitForExit(1400)) { throw "$name exited during startup ($($module.ExitCode))." }
         Write-Host "Hub opened $name ($Runtime)."
         if ($name -eq 'Dimmli') {
@@ -125,16 +130,15 @@ try {
         $confirmation = Wait-For 'the uninstall confirmation' { Find-HubControl @('Yes', 'Tak') }
         Invoke-NativeClick $confirmation
         Wait-For "$name uninstallation" { !(Test-Path -LiteralPath $moduleDirectory) } | Out-Null
-        if (!$module.WaitForExit(15000) -or $module.ExitCode -ne 0) {
-            throw "$name did not exit normally during removal."
-        }
+        if (!$module.WaitForExit(15000)) { throw "$name did not exit during removal." }
+        if ($module.ExitCode -ne 0) { throw "$name exited with code $($module.ExitCode) during removal." }
         $module.Dispose()
         Write-Host "Hub installed, opened and uninstalled $name ($Runtime)."
     }
 
     Invoke-Exe $hub '--exit'
     if (!$hubProcess.WaitForExit(15000) -or $hubProcess.ExitCode -ne 0) { throw 'Hub did not exit normally.' }
-    New-Item -Path $runKey -Force | Out-Null
+    if (!(Test-Path $runKey)) { New-Item -Path $runKey | Out-Null }
     Set-ItemProperty $runKey Hub "`"$hub`" --start"
     $uninstaller = (Get-ChildItem "$hubDir/unins*.exe").FullName
     Invoke-Exe $uninstaller "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$root\uninstall.log`""
@@ -173,7 +177,7 @@ try {
         if (!$hubProcess.HasExited) { Stop-Process -Id $hubProcess.Id -Force }
         $hubProcess.Dispose()
     }
-    foreach ($name in $Modules) {
+    foreach ($name in $testedModules) {
         $exe = Join-Path (Join-Path $appsDir $name) "$name.exe"
         Get-ModuleProcess $name $exe | Stop-Process -Force -ErrorAction SilentlyContinue
     }
