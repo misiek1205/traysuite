@@ -49,7 +49,7 @@ def version():
     return ET.parse(PUBLIC / "Directory.Build.props").findtext("./PropertyGroup/Version")
 
 
-def publish(project, directory, runtime, app_version):
+def publish(project, directory, runtime, app_version, configuration):
     dotnet = os.environ.get("DOTNET_EXE", "dotnet")
     settings = [
         f"-p:{property_name}={os.environ[environment]}"
@@ -58,7 +58,7 @@ def publish(project, directory, runtime, app_version):
     ]
     if os.environ.get("TRAYSUITE_OFFLINE_BUILD") == "1":
         settings += ["-p:NuGetAudit=false"]
-    run(dotnet, "publish", str(project), "-c", "Release", "-r", runtime,
+    run(dotnet, "publish", str(project), "-c", configuration, "-r", runtime,
         "--self-contained", "false", "-p:PublishSingleFile=false", "-p:DebugType=none",
         f"-p:Version={app_version}", "-warnaserror", "-o", str(directory), *settings)
     app = project.stem
@@ -103,7 +103,7 @@ def zip_package(directory, target):
                 archive.write(path, path.relative_to(directory).as_posix())
 
 
-def build(scope, runtime, app_version, no_setup, private_base):
+def build(scope, runtime, app_version, no_setup, private_base, configuration):
     catalog = load(CATALOG)
     output = ARTIFACTS / scope / runtime
     output.mkdir(parents=True, exist_ok=True)
@@ -121,7 +121,7 @@ def build(scope, runtime, app_version, no_setup, private_base):
                 package = {"version": app_version, "size_bytes": 0, "sha256": None, "download_url": ""}
             else:
                 project = ROOT / scope / "Apps" / name / f"{name}.csproj"
-                publish(project, work / name, runtime, app_version)
+                publish(project, work / name, runtime, app_version, configuration)
                 target = output / filename
                 zip_package(work / name, target)
                 url = f"{private_base.rstrip('/')}/{filename}" if private_base else filename
@@ -132,7 +132,7 @@ def build(scope, runtime, app_version, no_setup, private_base):
 
         if scope == "public":
             hub = work / "Hub"
-            publish(PUBLIC / "Hub" / "TraySuite.Hub.csproj", hub, runtime, app_version)
+            publish(PUBLIC / "Hub" / "TraySuite.Hub.csproj", hub, runtime, app_version, configuration)
             if no_setup:
                 portable = output / "Hub"
                 if portable.is_dir():
@@ -218,6 +218,7 @@ def main():
     build_parser.add_argument("--scope", required=True, choices=("public", "pro"))
     build_parser.add_argument("--runtime", required=True, choices=RUNTIMES)
     build_parser.add_argument("--version", default=version())
+    build_parser.add_argument("--configuration", default="Release", choices=("Release", "Debug"))
     build_parser.add_argument("--no-setup", action="store_true")
     build_parser.add_argument("--private-base", default=None)
     merge_parser = tasks.add_parser("merge")
@@ -232,7 +233,7 @@ def main():
             parser.error("--version must contain two to four numeric components.")
         if options.private_base and (options.scope != "pro" or not options.private_base.startswith("https://")):
             parser.error("--private-base is an HTTPS address for the private build.")
-        build(options.scope, options.runtime, options.version, options.no_setup, options.private_base)
+        build(options.scope, options.runtime, options.version, options.no_setup, options.private_base, options.configuration)
     else:
         if options.pro_metadata and options.scope != "public":
             parser.error("--pro-metadata applies only to the public manifest.")

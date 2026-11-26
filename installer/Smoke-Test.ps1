@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory)]
     [ValidateSet('win-x64', 'win-arm64')]
     [string]$Runtime,
@@ -116,6 +116,8 @@ try {
         if (Test-Path $moduleDirectory) { throw "$moduleDirectory already exists before the smoke test." }
         Invoke-HubButton @("Install $name", "Zainstaluj $name")
         Wait-For "$name installation" { Test-Path -LiteralPath $exe } | Out-Null
+        Write-Host "Hub installed $name ($Runtime)."
+        Invoke-Exe $hub '--open'
 
         Invoke-HubButton @("Open $name", "Otwórz $name")
         $module = Wait-For "$name process launched by Hub" { Get-ModuleProcess $name $exe }
@@ -154,7 +156,29 @@ try {
     }
 } catch {
     $log = Join-Path $root 'setup.log'
-    if (Test-Path $log) { Get-Content -Tail 30 -LiteralPath $log | Write-Host }
+    if (Test-Path $log) { Get-Content -Tail 12 -LiteralPath $log | Write-Host }
+    if ($hubProcess) {
+        $hubProcess.Refresh()
+        if ($hubProcess.HasExited) {
+            Write-Host "Hub exited with code $($hubProcess.ExitCode)."
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue |
+                Where-Object { $_.ProviderName -in '.NET Runtime', 'Application Error' -and $_.Message -like '*TraySuite*' } |
+                Select-Object -First 3 -ExpandProperty Message | Write-Host
+        } else {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $hubProcess.Id)
+            foreach ($window in [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+                [System.Windows.Automation.TreeScope]::Children, $condition)) {
+                $details = $window.Current
+                Write-Host "Hub window: name='$($details.Name)' offscreen=$($details.IsOffscreen) enabled=$($details.IsEnabled)"
+                foreach ($element in $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                    [System.Windows.Automation.Condition]::TrueCondition)) {
+                    $details = $element.Current
+                    if ($details.Name) { Write-Host "  '$($details.Name)' enabled=$($details.IsEnabled)" }
+                }
+            }
+        }
+    }
     throw
 } finally {
     if ($hubProcess) {
