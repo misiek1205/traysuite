@@ -2,7 +2,8 @@
     [Parameter(Mandatory)]
     [ValidateSet('win-x64', 'win-arm64')]
     [string]$Runtime,
-    [string[]]$Modules = @('Dimmli', 'Awake', 'ClipPlain', 'PinWin', 'PowerFlip'),
+    [string[]]$Modules = @('Dimmli', 'Awake', 'ClipPlain', 'PinWin', 'PowerFlip',
+        'HashVerify', 'PortCheck', 'BatchRename', 'QuickView', 'FocusDim', 'CleanLink'),
     [switch]$ActivateDebugPro
 )
 

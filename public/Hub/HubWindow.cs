@@ -14,8 +14,11 @@ internal sealed class HubWindow : ModuleWindow
     private readonly Dictionary<string, PopupToggle> runningToggles = [];
     private readonly PackageCatalog catalog;
     private readonly PackageStore store;
+    private readonly ToolHotkeys toolHotkeys;
+    private bool shortcutsEnabled, shortcutConflict;
     private IReadOnlyList<CatalogApp> apps;
     private Uri? activationManifest;
+    private int modeFilter, tierFilter;
     private bool busy, settings, loaded, syncing;
     public bool ShowTray { get; private set; }
     public event Action<bool>? TrayChanged;
@@ -29,6 +32,10 @@ internal sealed class HubWindow : ModuleWindow
         catalog = new PackageCatalog(http, local);
         store = new PackageStore(catalog, Path.Combine(LicenseManager.DataDirectory, "Apps"));
         apps = catalog.Fallback;
+        toolHotkeys = new ToolHotkeys(LaunchFromShortcut);
+        using var preferences = Registry.CurrentUser.OpenSubKey(PreferencesKey);
+        shortcutsEnabled = preferences?.GetValue("ToolShortcuts") is 1;
+        ApplyShortcuts();
         VisibleChanged += (_, _) =>
         {
             if (Visible)
@@ -49,6 +56,22 @@ internal sealed class HubWindow : ModuleWindow
         Render();
     }
 
+    private void ApplyShortcuts() => shortcutConflict = !toolHotkeys.Apply(ShowTray && shortcutsEnabled);
+
+    private void LaunchFromShortcut(string id, string[]? paths)
+    {
+        var app = apps.Single(item => item.Id == id);
+        if (store.InstalledVersion(id) is null || app.Pro && !LicenseManager.IsPro)
+            return;
+        Run(async token =>
+        {
+            if (id == "FocusDim" && store.HasOpenWindow(id))
+                await store.Stop(id, token, resident: false);
+            else
+                store.Start(app, open: true, paths);
+        });
+    }
+
     private void Render()
     {
         int offset = ScrollOffset;
@@ -64,9 +87,15 @@ internal sealed class HubWindow : ModuleWindow
             {
                 Add(Columns(Button(Texts.Get("Settings", "Ustawienia"), () => ChangePage(true), PopupGlyph.Settings),
                     Button(Texts.Get("Refresh", "Odśwież"), () => Run(Refresh), PopupGlyph.Refresh)), 37);
+                Add(Columns(Filter("Launch type", ["All launch types", "Tray", "On demand", "File tools", "Overlays"],
+                        modeFilter, index => modeFilter = index),
+                    Filter("License tier", ["All tiers", "Free", "Pro"], tierFilter, index => tierFilter = index)), 31);
                 bool pro = LicenseManager.IsPro;
-                foreach (var app in apps)
-                    Add(AppCard(app, pro), store.InstalledVersion(app.Id) is null ? 102 : 136);
+                var visibleApps = apps.Where(MatchesFilter).ToArray();
+                foreach (var app in visibleApps)
+                    Add(AppCard(app, pro), app.Resident && store.InstalledVersion(app.Id) is not null ? 136 : 102);
+                if (visibleApps.Length == 0)
+                    Add(Label("No tools match these filters.", muted: true), 28);
             }
             Body.Enabled = !busy;
         }
@@ -79,6 +108,31 @@ internal sealed class HubWindow : ModuleWindow
         ScrollOffset = offset;
     }
 
+    private bool MatchesFilter(CatalogApp app) =>
+        (tierFilter == 0 || app.Pro == (tierFilter == 2)) && modeFilter switch
+        {
+            1 => app.Resident,
+            2 => app.Mode == "window",
+            3 => app.Mode == "files",
+            4 => app.Mode == "overlay",
+            _ => true
+        };
+
+    private Control Filter(string label, string[] choices, int selected, Action<int> select)
+    {
+        var control = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList,
+            AccessibleName = label, BackColor = Theme.Card, ForeColor = Theme.Text };
+        control.Items.AddRange(choices);
+        control.SelectedIndex = selected;
+        control.SelectionChangeCommitted += (_, _) =>
+        {
+            select(control.SelectedIndex);
+            ScrollOffset = 0;
+            Render();
+        };
+        return control;
+    }
+
     private Control AppCard(CatalogApp app, bool pro)
     {
         string? installed = store.InstalledVersion(app.Id);
@@ -88,7 +142,7 @@ internal sealed class HubWindow : ModuleWindow
         bool available = package?.DownloadUrl is not null && (!app.Pro || pro);
         var content = new TableLayoutPanel
         {
-            ColumnCount = 2, RowCount = installed is null ? 2 : 3, BackColor = Theme.Card
+            ColumnCount = 2, RowCount = installed is not null && app.Resident ? 3 : 2, BackColor = Theme.Card
         };
         content.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
         content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -153,7 +207,7 @@ internal sealed class HubWindow : ModuleWindow
                 {
                     if (MessageBox.Show(this, Texts.Get($"Uninstall {app.Id}?", $"Odinstalować {app.Id}?"), Text,
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                        Run(token => store.Uninstall(app.Id, token));
+                        Run(token => store.Uninstall(app, token));
                 }
                 finally { Enabled = true; Activate(); }
             }, style: PopupButtonStyle.Quiet);
@@ -162,6 +216,29 @@ internal sealed class HubWindow : ModuleWindow
                 install.Dispose();
             actions = update ? Columns(open, install, remove) : Columns(open, remove);
 
+            if (app.Resident)
+            {
+                AddResidentControls(app, pro, content);
+            }
+        }
+        actions.Margin = Padding.Empty;
+        if (installed is null)
+        {
+            var singleAction = new TableLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty, ColumnCount = 2, RowCount = 1 };
+            singleAction.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            singleAction.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 138));
+            singleAction.Controls.Add(actions, 1, 0);
+            actions = singleAction;
+        }
+        content.Controls.Add(actions, 0, 1);
+        content.SetColumnSpan(actions, 2);
+        var card = Card(content, new Padding(11, 9, 11, 9));
+        content.BackColor = Theme.Card;
+        return card;
+    }
+
+    private void AddResidentControls(CatalogApp app, bool pro, TableLayoutPanel content)
+    {
             var running = new PopupToggle { Text = Texts.Get("Enabled", "Włączone"), Dock = DockStyle.Fill,
                 Checked = AppLifecycle.IsRunning(app.Id), Enabled = !app.Pro || pro };
             runningToggles[app.Id] = running;
@@ -187,21 +264,6 @@ internal sealed class HubWindow : ModuleWindow
             options.Margin = new Padding(2, 5, 0, 0);
             content.Controls.Add(options, 0, 2);
             content.SetColumnSpan(options, 2);
-        }
-        actions.Margin = Padding.Empty;
-        if (installed is null)
-        {
-            var singleAction = new TableLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty, ColumnCount = 2, RowCount = 1 };
-            singleAction.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            singleAction.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 138));
-            singleAction.Controls.Add(actions, 1, 0);
-            actions = singleAction;
-        }
-        content.Controls.Add(actions, 0, 1);
-        content.SetColumnSpan(actions, 2);
-        var card = Card(content, new Padding(11, 9, 11, 9));
-        content.BackColor = Theme.Card;
-        return card;
     }
 
     private static string FormatSize(long size) => size >= 1024 * 1024
@@ -212,7 +274,7 @@ internal sealed class HubWindow : ModuleWindow
     {
         settings = showSettings;
         SetSubtitle(settings ? Texts.Get("Settings", "Ustawienia") : Texts.Get("Tools", "Narzędzia"));
-        LogicalHeight = settings ? 389 : 694;
+        LogicalHeight = settings ? 505 : 694;
         ScrollOffset = 0;
         SetStatus("");
         Render();
@@ -230,10 +292,23 @@ internal sealed class HubWindow : ModuleWindow
                 Startup.Set("Hub", Application.ExecutablePath, false, onlyOwnEntry: true);
             preferences.SetValue("Tray", tray.Checked ? 1 : 0);
             ShowTray = tray.Checked;
+            ApplyShortcuts();
             TrayChanged?.Invoke(ShowTray);
             return Task.CompletedTask;
         });
         Add(Card(tray), 44);
+        var shortcuts = new PopupToggle { Text = "Tool shortcuts while Hub runs", Checked = shortcutsEnabled, Enabled = ShowTray };
+        shortcuts.CheckedChanged += (_, _) => Run(_ =>
+        {
+            using var preferences = Registry.CurrentUser.CreateSubKey(PreferencesKey);
+            preferences.SetValue("ToolShortcuts", shortcuts.Checked ? 1 : 0);
+            shortcutsEnabled = shortcuts.Checked;
+            ApplyShortcuts();
+            return Task.CompletedTask;
+        });
+        Add(Card(shortcuts), 44);
+        Add(Label(shortcutConflict ? "Some shortcuts are already in use." :
+            "Ctrl+Alt+Space  QuickView   ·   Ctrl+Alt+F  FocusDim   ·   Ctrl+Alt+D  DropShelf", muted: true), 44);
         Add(Label(LicenseManager.IsPro ? Texts.Get("Pro is active", "Wersja Pro aktywna") : Texts.Get("Pro license", "Licencja Pro"),
             font: PopupAppearance.LabelFont), 22);
         var key = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true, MaxLength = 200,
@@ -329,7 +404,8 @@ internal sealed class HubWindow : ModuleWindow
         catch (OperationCanceledException) when (closing.IsCancellationRequested) { }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or HttpRequestException
             or JsonException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception
-            or KeyNotFoundException or OperationCanceledException or TimeoutException or System.Security.SecurityException)
+            or KeyNotFoundException or OperationCanceledException or TimeoutException or System.Security.SecurityException
+            or System.Runtime.InteropServices.COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
         {
             if (!IsDisposed)
                 SetStatus(error.Message);
@@ -358,6 +434,7 @@ internal sealed class HubWindow : ModuleWindow
         {
             closing.Cancel();
             refreshRunning.Dispose();
+            toolHotkeys.Dispose();
             http.Dispose();
             closing.Dispose();
         }

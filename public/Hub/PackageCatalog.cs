@@ -10,11 +10,13 @@ internal sealed record PackageInfo(string Version, long SizeBytes, string? Sha25
     [JsonIgnore] public bool HasHash => Sha256 is { Length: 64 } hash && hash.All(Uri.IsHexDigit);
 }
 
-internal sealed record CatalogApp(string Id, string Tier, string DescriptionEn, string DescriptionPl,
-    Dictionary<string, PackageInfo>? Packages = null)
+internal sealed record CatalogApp(string Id, string Tier, string DescriptionEn, string? DescriptionPl,
+    Dictionary<string, PackageInfo>? Packages = null, string? Mode = null)
 {
     [JsonIgnore] public bool Pro => Tier == "pro";
-    [JsonIgnore] public string Description => Texts.Get(DescriptionEn, DescriptionPl);
+    [JsonIgnore] public bool Resident => Mode is null or "tray";
+    [JsonIgnore] public bool AcceptsFiles => Mode == "files" || Id is "SpaceLens" or "DropShelf";
+    [JsonIgnore] public string Description => Texts.Get(DescriptionEn, DescriptionPl ?? DescriptionEn);
     [JsonIgnore] public PackageInfo? Package => Packages?.GetValueOrDefault(PackageCatalog.Runtime);
 }
 

@@ -1,0 +1,6 @@
+---
+description: Require pull requests and passing GitHub Actions for main
+alwaysApply: true
+---
+
+Make changes on a feature branch and open a pull request targeting `main`. Merge through GitHub after the required Actions check passes against the current base and review conversations are resolved. Keep direct pushes, force pushes, and bypasses disabled on `main`. Merge coordinated public dependencies before the Pro pull request.

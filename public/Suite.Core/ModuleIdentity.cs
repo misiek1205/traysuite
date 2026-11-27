@@ -22,6 +22,15 @@ public readonly record struct ModuleIdentity(PopupGlyph Glyph, Color Light, Colo
             "SnapKit" => (PopupGlyph.Scan, 0x8ba9ed, 0x414fa3),
             "Unlocker" => (PopupGlyph.Lock, 0xdfac66, 0x93551f),
             "NetWatch" => (PopupGlyph.Network, 0x64b6df, 0x225e90),
+            "HashVerify" => (PopupGlyph.Check, 0x62bba1, 0x236d5c),
+            "PortCheck" => (PopupGlyph.Network, 0x80a6de, 0x31579a),
+            "BatchRename" => (PopupGlyph.Clipboard, 0xdaaa69, 0x93603c),
+            "QuickView" => (PopupGlyph.Scan, 0xa193ed, 0x554ca7),
+            "FocusDim" => (PopupGlyph.Moon, 0x9894db, 0x454285),
+            "CleanLink" => (PopupGlyph.Lock, 0xdc9682, 0x934c43),
+            "SpaceLens" => (PopupGlyph.Grid, 0x60baab, 0x176e65),
+            "ShrinkImg" => (PopupGlyph.Display, 0x76b6e5, 0x3166a1),
+            "DropShelf" => (PopupGlyph.Download, 0xb498e4, 0x684f9e),
             _ => (PopupGlyph.Grid, 0x9e9afb, 0x4944a5)
         };
         return new(glyph, PopupAppearance.ColorOf(light), PopupAppearance.ColorOf(dark));

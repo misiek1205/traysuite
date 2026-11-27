@@ -12,6 +12,15 @@
     {"id":"Volly","tier":"pro","description_en":"Adjust app volume and switch outputs","description_pl":"Głośność aplikacji i przełączanie wyjść"},
     {"id":"SnapKit","tier":"pro","description_en":"Screen OCR and color picker","description_pl":"Rozpoznawanie tekstu z ekranu i pipeta kolorów"},
     {"id":"Unlocker","tier":"pro","description_en":"Find and release file locks","description_pl":"Wykrywanie i zwalnianie blokad plików"},
-    {"id":"NetWatch","tier":"pro","description_en":"Network activity and firewall controls","description_pl":"Aktywność sieciowa i sterowanie zaporą"}
+    {"id":"NetWatch","tier":"pro","description_en":"Network activity and firewall controls","description_pl":"Aktywność sieciowa i sterowanie zaporą"},
+    {"id":"HashVerify","tier":"free","mode":"files","description_en":"Verify SHA-256 and MD5 file checksums"},
+    {"id":"PortCheck","tier":"free","mode":"window","description_en":"Find which process owns a local port"},
+    {"id":"BatchRename","tier":"free","mode":"files","description_en":"Preview and apply bulk file renames"},
+    {"id":"QuickView","tier":"free","mode":"files","description_en":"Preview files, archives, and fonts"},
+    {"id":"FocusDim","tier":"free","mode":"overlay","description_en":"Dim the screen around the active window"},
+    {"id":"CleanLink","tier":"free","mode":"files","description_en":"Best-effort overwrite and permanent deletion"},
+    {"id":"SpaceLens","tier":"pro","mode":"window","description_en":"Find the files and folders using the most space"},
+    {"id":"ShrinkImg","tier":"pro","mode":"files","description_en":"Convert and compress images in batches"},
+    {"id":"DropShelf","tier":"pro","mode":"overlay","description_en":"Collect files and drag them into another app"}
   ]
 }

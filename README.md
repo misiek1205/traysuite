@@ -2,7 +2,7 @@
 
 Modular tools for Windows 10 and 11, available in Free and Pro tiers. [Hub and free apps](public/README.md) · [Dimmli documentation](public/Apps/Dimmli/README.md)
 
-- `public/` contains Hub, Suite.Core, and the free modules Dimmli, Awake, ClipPlain, PinWin, and PowerFlip. You can copy this directory into a separate repository and build `public/TraySuite.sln` independently.
+- `public/` contains Hub, Suite.Core, and the Free tray and on-demand modules. You can copy this directory into a separate repository and build `public/TraySuite.sln` independently.
 - The root `TraySuite.sln` builds the public projects. If you have access to the private TraySuite Pro repository, clone it into the ignored `pro/` directory with `git clone https://github.com/misiek1205/traysuite-pro.git pro`. Each app uses the shared .NET 10 Desktop Runtime for its architecture.
 
 ## Build packages

@@ -10,6 +10,14 @@ permissions:
   contents: read
 
 jobs:
+  required-ci:
+    name: Public CI
+    if: always()
+    needs: [packages, manifest]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.packages.result }}" = success && test "${{ needs.manifest.result }}" = success
+
   packages:
     strategy:
       fail-fast: false
