@@ -14,19 +14,28 @@ internal sealed class HubWindow : ModuleWindow
     private readonly Dictionary<string, PopupToggle> runningToggles = [];
     private readonly PackageCatalog catalog;
     private readonly PackageStore store;
+    private readonly ToolHotkeys toolHotkeys;
+    private bool shortcutsEnabled, shortcutConflict;
     private IReadOnlyList<CatalogApp> apps;
     private Uri? activationManifest;
+    private int modeFilter, tierFilter;
     private bool busy, settings, loaded, syncing;
     public bool ShowTray { get; private set; }
     public event Action<bool>? TrayChanged;
     public event Action? ReadyToExit;
 
-    public HubWindow(string? local, bool showTray) : base("TraySuite", Texts.Get("Tools", "Narzędzia"), 650)
+    protected override int LogicalWidth => 468;
+
+    public HubWindow(string? local, bool showTray) : base("TraySuite", Texts.Get("Tools", "Narzędzia"), 694)
     {
         ShowTray = showTray;
         catalog = new PackageCatalog(http, local);
         store = new PackageStore(catalog, Path.Combine(LicenseManager.DataDirectory, "Apps"));
         apps = catalog.Fallback;
+        toolHotkeys = new ToolHotkeys(LaunchFromShortcut);
+        using var preferences = Registry.CurrentUser.OpenSubKey(PreferencesKey);
+        shortcutsEnabled = preferences?.GetValue("ToolShortcuts") is 1;
+        ApplyShortcuts();
         VisibleChanged += (_, _) =>
         {
             if (Visible)
@@ -47,8 +56,25 @@ internal sealed class HubWindow : ModuleWindow
         Render();
     }
 
+    private void ApplyShortcuts() => shortcutConflict = !toolHotkeys.Apply(ShowTray && shortcutsEnabled);
+
+    private void LaunchFromShortcut(string id, string[]? paths)
+    {
+        var app = apps.Single(item => item.Id == id);
+        if (store.InstalledVersion(id) is null || app.Pro && !LicenseManager.IsPro)
+            return;
+        Run(async token =>
+        {
+            if (id == "FocusDim" && store.HasOpenWindow(id))
+                await store.Stop(id, token, resident: false);
+            else
+                store.Start(app, open: true, paths);
+        });
+    }
+
     private void Render()
     {
+        int offset = ScrollOffset;
         SuspendLayout();
         Body.SuspendLayout();
         try
@@ -59,10 +85,17 @@ internal sealed class HubWindow : ModuleWindow
                 RenderSettings();
             else
             {
-                Add(Columns(Button(Texts.Get("Settings", "Ustawienia"), () => ChangePage(true)),
-                    Button(Texts.Get("Refresh", "Odśwież"), () => Run(Refresh))), 32);
-                foreach (var app in apps)
-                    Add(AppCard(app), store.InstalledVersion(app.Id) is null ? 84 : 112);
+                Add(Columns(Button(Texts.Get("Settings", "Ustawienia"), () => ChangePage(true), PopupGlyph.Settings),
+                    Button(Texts.Get("Refresh", "Odśwież"), () => Run(Refresh), PopupGlyph.Refresh)), 37);
+                Add(Columns(Filter("Launch type", ["All launch types", "Tray", "On demand", "File tools", "Overlays"],
+                        modeFilter, index => modeFilter = index),
+                    Filter("License tier", ["All tiers", "Free", "Pro"], tierFilter, index => tierFilter = index)), 31);
+                bool pro = LicenseManager.IsPro;
+                var visibleApps = apps.Where(MatchesFilter).ToArray();
+                foreach (var app in visibleApps)
+                    Add(AppCard(app, pro), app.Resident && store.InstalledVersion(app.Id) is not null ? 136 : 102);
+                if (visibleApps.Length == 0)
+                    Add(Label("No tools match these filters.", muted: true), 28);
             }
             Body.Enabled = !busy;
         }
@@ -72,59 +105,101 @@ internal sealed class HubWindow : ModuleWindow
             ResumeLayout();
         }
         Place();
+        ScrollOffset = offset;
     }
 
-    private Control AppCard(CatalogApp app)
+    private bool MatchesFilter(CatalogApp app) =>
+        (tierFilter == 0 || app.Pro == (tierFilter == 2)) && modeFilter switch
+        {
+            1 => app.Resident,
+            2 => app.Mode == "window",
+            3 => app.Mode == "files",
+            4 => app.Mode == "overlay",
+            _ => true
+        };
+
+    private Control Filter(string label, string[] choices, int selected, Action<int> select)
+    {
+        var control = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList,
+            AccessibleName = label, BackColor = Theme.Card, ForeColor = Theme.Text };
+        control.Items.AddRange(choices);
+        control.SelectedIndex = selected;
+        control.SelectionChangeCommitted += (_, _) =>
+        {
+            select(control.SelectedIndex);
+            ScrollOffset = 0;
+            Render();
+        };
+        return control;
+    }
+
+    private Control AppCard(CatalogApp app, bool pro)
     {
         string? installed = store.InstalledVersion(app.Id);
         var package = app.Package;
         bool update = installed is not null && Version.TryParse(installed, out var current)
             && Version.TryParse(package?.Version, out var published) && published > current;
-        bool available = package?.DownloadUrl is not null && (!app.Pro || LicenseManager.IsPro);
-        var card = new PopupCard(Theme.Card) { BackColor = Theme.Background, Padding = new Padding(8, 3, 8, 3) };
-        var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = installed is null ? 3 : 4 };
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 27));
+        bool available = package?.DownloadUrl is not null && (!app.Pro || pro);
+        var content = new TableLayoutPanel
+        {
+            ColumnCount = 2, RowCount = installed is not null && app.Resident ? 3 : 2, BackColor = Theme.Card
+        };
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 33));
+        var mark = new ModuleMark(app.Id, 36) { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 5), TabStop = false };
+        content.Controls.Add(mark, 0, 0);
 
-        var header = new TableLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty, ColumnCount = 3, RowCount = 1 };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 77));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, app.Pro ? 42 : 0));
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 5), ColumnCount = 3, RowCount = 2 };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, app.Pro ? 46 : 0));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.Controls.Add(Label(app.Id, font: PopupAppearance.LabelFont), 0, 0);
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 53));
+        header.RowStyles.Add(new RowStyle(SizeType.Percent, 47));
+        var title = Label(app.Id, font: PopupAppearance.LabelFont);
+        title.AutoSize = true;
+        header.Controls.Add(title, 0, 0);
         if (app.Pro)
-            header.Controls.Add(new ProBadge { Margin = Padding.Empty, Anchor = AnchorStyles.Left }, 1, 0);
+            header.Controls.Add(new ProBadge { Margin = new Padding(7, 0, 0, 0), Anchor = AnchorStyles.Left }, 1, 0);
         string state = installed is null ? Texts.Get("Available", "Dostępne")
             : update ? Texts.Get("Update available", "Dostępna aktualizacja") : Texts.Get("Installed", "Zainstalowane");
         var status = Label(state, muted: true);
+        if (update)
+            status.ForeColor = Theme.Accent;
         status.TextAlign = ContentAlignment.MiddleRight;
         header.Controls.Add(status, 2, 0);
-        content.Controls.Add(header, 0, 0);
+        content.Controls.Add(header, 1, 0);
         string packageSize = package is { SizeBytes: > 0 } ? FormatSize(package.SizeBytes) : "";
         var description = Label(app.Description, muted: true);
         var size = Label(packageSize, muted: true);
         size.TextAlign = ContentAlignment.MiddleRight;
         var details = Columns(description, size);
-        details.ColumnStyles[0].Width = packageSize.Length == 0 ? 100 : 79;
-        details.ColumnStyles[1].Width = packageSize.Length == 0 ? 0 : 21;
-        content.Controls.Add(details, 0, 1);
+        details.ColumnStyles[0].Width = packageSize.Length == 0 ? 100 : 83;
+        details.ColumnStyles[1].Width = packageSize.Length == 0 ? 0 : 17;
+        header.Controls.Add(details, 0, 1);
+        header.SetColumnSpan(details, 3);
 
         var install = Button(update ? Texts.Get("Update", "Aktualizuj") : Texts.Get("Install", "Zainstaluj"),
-            () => Run(token => Install(app, token)));
+            () => Run(token => Install(app, token)), PopupGlyph.Download,
+            update ? PopupButtonStyle.Primary : PopupButtonStyle.Standard);
+        install.ForeColor = Theme.Accent;
         install.AccessibleName = $"{install.Text} {app.Id}";
         install.Enabled = available;
-        if (app.Pro && !LicenseManager.IsPro && installed is null)
+        Control actions;
+        if (app.Pro && !pro && installed is null)
         {
             install.Dispose();
-            content.Controls.Add(Button(Texts.Get("Activate Pro", "Aktywuj Pro"), () => ChangePage(true)), 0, 2);
+            actions = Button(Texts.Get("Activate Pro", "Aktywuj Pro"), () => ChangePage(true), PopupGlyph.Lock);
         }
         else if (installed is null)
-            content.Controls.Add(install, 0, 2);
+            actions = install;
         else
         {
-            var open = Button(Texts.Get("Open", "Otwórz"), () => Run(_ => { store.Start(app, open: true); return Task.CompletedTask; }));
+            var open = Button(Texts.Get("Open", "Otwórz"), () => Run(_ => { store.Start(app, open: true); return Task.CompletedTask; }),
+                style: update ? PopupButtonStyle.Standard : PopupButtonStyle.Primary);
             open.AccessibleName = $"{open.Text} {app.Id}";
-            open.Enabled = !app.Pro || LicenseManager.IsPro;
+            open.Enabled = !app.Pro || pro;
             var remove = Button(Texts.Get("Uninstall", "Odinstaluj"), () =>
             {
                 Enabled = false;
@@ -132,17 +207,40 @@ internal sealed class HubWindow : ModuleWindow
                 {
                     if (MessageBox.Show(this, Texts.Get($"Uninstall {app.Id}?", $"Odinstalować {app.Id}?"), Text,
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                        Run(token => store.Uninstall(app.Id, token));
+                        Run(token => store.Uninstall(app, token));
                 }
                 finally { Enabled = true; Activate(); }
-            });
+            }, style: PopupButtonStyle.Quiet);
             remove.AccessibleName = $"{remove.Text} {app.Id}";
             if (!update)
                 install.Dispose();
-            content.Controls.Add(update ? Columns(open, install, remove) : Columns(open, remove), 0, 2);
+            actions = update ? Columns(open, install, remove) : Columns(open, remove);
 
+            if (app.Resident)
+            {
+                AddResidentControls(app, pro, content);
+            }
+        }
+        actions.Margin = Padding.Empty;
+        if (installed is null)
+        {
+            var singleAction = new TableLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty, ColumnCount = 2, RowCount = 1 };
+            singleAction.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            singleAction.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 138));
+            singleAction.Controls.Add(actions, 1, 0);
+            actions = singleAction;
+        }
+        content.Controls.Add(actions, 0, 1);
+        content.SetColumnSpan(actions, 2);
+        var card = Card(content, new Padding(11, 9, 11, 9));
+        content.BackColor = Theme.Card;
+        return card;
+    }
+
+    private void AddResidentControls(CatalogApp app, bool pro, TableLayoutPanel content)
+    {
             var running = new PopupToggle { Text = Texts.Get("Enabled", "Włączone"), Dock = DockStyle.Fill,
-                Checked = AppLifecycle.IsRunning(app.Id), Enabled = !app.Pro || LicenseManager.IsPro };
+                Checked = AppLifecycle.IsRunning(app.Id), Enabled = !app.Pro || pro };
             runningToggles[app.Id] = running;
             running.CheckedChanged += (_, _) =>
             {
@@ -160,12 +258,12 @@ internal sealed class HubWindow : ModuleWindow
                 });
             };
             var startup = new PopupToggle { Text = Texts.Get("Startup", "Autostart"), Dock = DockStyle.Fill,
-                Checked = store.StartsWithWindows(app.Id), Enabled = !app.Pro || LicenseManager.IsPro };
+                Checked = store.StartsWithWindows(app.Id), Enabled = !app.Pro || pro };
             startup.CheckedChanged += (_, _) => Run(_ => { store.SetStartup(app.Id, startup.Checked); return Task.CompletedTask; });
-            content.Controls.Add(Columns(running, startup), 0, 3);
-        }
-        card.Controls.Add(content);
-        return card;
+            var options = Columns(running, startup);
+            options.Margin = new Padding(2, 5, 0, 0);
+            content.Controls.Add(options, 0, 2);
+            content.SetColumnSpan(options, 2);
     }
 
     private static string FormatSize(long size) => size >= 1024 * 1024
@@ -175,14 +273,17 @@ internal sealed class HubWindow : ModuleWindow
     private void ChangePage(bool showSettings)
     {
         settings = showSettings;
-        LogicalHeight = settings ? 310 : 650;
+        SetSubtitle(settings ? Texts.Get("Settings", "Ustawienia") : Texts.Get("Tools", "Narzędzia"));
+        LogicalHeight = settings ? 505 : 694;
+        ScrollOffset = 0;
         SetStatus("");
         Render();
     }
 
     private void RenderSettings()
     {
-        Add(Button(Texts.Get("Back", "Wróć"), () => ChangePage(false)), 31);
+        Add(Button(Texts.Get("Back", "Wróć"), () => ChangePage(false), PopupGlyph.Back,
+            PopupButtonStyle.Quiet, leftAligned: true), 34);
         var tray = new PopupToggle { Text = Texts.Get("Show Hub tray icon", "Pokazuj ikonę Huba w zasobniku"), Checked = ShowTray };
         tray.CheckedChanged += (_, _) => Run(_ =>
         {
@@ -191,24 +292,37 @@ internal sealed class HubWindow : ModuleWindow
                 Startup.Set("Hub", Application.ExecutablePath, false, onlyOwnEntry: true);
             preferences.SetValue("Tray", tray.Checked ? 1 : 0);
             ShowTray = tray.Checked;
+            ApplyShortcuts();
             TrayChanged?.Invoke(ShowTray);
             return Task.CompletedTask;
         });
-        Add(tray, 27);
+        Add(Card(tray), 44);
+        var shortcuts = new PopupToggle { Text = "Tool shortcuts while Hub runs", Checked = shortcutsEnabled, Enabled = ShowTray };
+        shortcuts.CheckedChanged += (_, _) => Run(_ =>
+        {
+            using var preferences = Registry.CurrentUser.CreateSubKey(PreferencesKey);
+            preferences.SetValue("ToolShortcuts", shortcuts.Checked ? 1 : 0);
+            shortcutsEnabled = shortcuts.Checked;
+            ApplyShortcuts();
+            return Task.CompletedTask;
+        });
+        Add(Card(shortcuts), 44);
+        Add(Label(shortcutConflict ? "Some shortcuts are already in use." :
+            "Ctrl+Alt+Space  QuickView   ·   Ctrl+Alt+F  FocusDim   ·   Ctrl+Alt+D  DropShelf", muted: true), 44);
         Add(Label(LicenseManager.IsPro ? Texts.Get("Pro is active", "Wersja Pro aktywna") : Texts.Get("Pro license", "Licencja Pro"),
             font: PopupAppearance.LabelFont), 22);
         var key = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true, MaxLength = 200,
             AccessibleName = Texts.Get("License key", "Klucz licencyjny"), BackColor = Theme.Card, ForeColor = Theme.Text };
-        Add(key, 25);
+        Add(PopupField.Wrap(key), 38);
         var activate = Button(Texts.Get("Activate", "Aktywuj"), () =>
         {
             string value = key.Text;
             Run(async token =>
             {
                 activationManifest = (await LicenseManager.Activate(value, token)).PackageManifest;
-                await Refresh(token);
+                await Refresh(token, renewManifest: activationManifest is null);
             });
-        });
+        }, style: PopupButtonStyle.Primary);
         var buy = new LinkLabel { Dock = DockStyle.Fill, Text = Texts.Get("Buy Pro key", "Kup klucz Pro"),
             LinkColor = Theme.Accent, ActiveLinkColor = Theme.Text, DisabledLinkColor = Theme.Muted,
             TextAlign = ContentAlignment.MiddleCenter, Enabled = LicenseManager.Checkout is not null };
@@ -218,6 +332,7 @@ internal sealed class HubWindow : ModuleWindow
             return Task.CompletedTask;
         });
         Add(Columns(activate, buy), 31);
+        Add(Button(ExplorerRestart.ActionText, () => Run(_ => ExplorerRestart.Run())), 31);
     }
 
     private async Task Install(CatalogApp app, CancellationToken token)
@@ -235,23 +350,27 @@ internal sealed class HubWindow : ModuleWindow
         await store.Install(app, token);
     }
 
-    private async Task Refresh(CancellationToken token)
+    private Task Refresh(CancellationToken token) => Refresh(token, renewManifest: true);
+
+    private async Task Refresh(CancellationToken token, bool renewManifest)
     {
         loaded = true;
         string? downloadError = null;
-        if (!catalog.LocalMode && activationManifest is null && LicenseManager.Read() is { } license)
+        if (!catalog.LocalMode && renewManifest && LicenseManager.Read() is { } license)
         {
-            try { activationManifest = await LicenseManager.RequestPackageManifest(license, token); }
-            catch (Exception error) when (error is HttpRequestException or JsonException or InvalidOperationException or KeyNotFoundException)
+            try { activationManifest = await LicenseManager.RequestPackageManifest(license, token) ?? activationManifest; }
+            catch (Exception error) when (!token.IsCancellationRequested && error is HttpRequestException or IOException
+                or JsonException or InvalidOperationException or KeyNotFoundException or OperationCanceledException)
             {
                 downloadError = Texts.Get("Pro downloads are temporarily unavailable.", "Pobieranie Pro jest chwilowo niedostępne.");
             }
         }
         try { apps = await catalog.Load(activationManifest, token); }
-        catch (Exception error) when (activationManifest is not null && error is HttpRequestException or InvalidDataException or JsonException)
+        catch (Exception error) when (!token.IsCancellationRequested && (catalog.LocalMode || activationManifest is not null)
+            && error is HttpRequestException or IOException or InvalidDataException or JsonException or OperationCanceledException)
         {
             activationManifest = null;
-            apps = await catalog.Load(null, token);
+            apps = await catalog.Load(null, token, includePrivate: false);
             downloadError = Texts.Get("Pro downloads are temporarily unavailable.", "Pobieranie Pro jest chwilowo niedostępne.");
         }
         SetStatus(downloadError ?? "");
@@ -281,12 +400,12 @@ internal sealed class HubWindow : ModuleWindow
         try
         {
             await operation(closing.Token);
-
         }
         catch (OperationCanceledException) when (closing.IsCancellationRequested) { }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or HttpRequestException
             or JsonException or InvalidOperationException or ArgumentException or System.ComponentModel.Win32Exception
-            or KeyNotFoundException or OperationCanceledException or System.Security.SecurityException)
+            or KeyNotFoundException or OperationCanceledException or TimeoutException or System.Security.SecurityException
+            or System.Runtime.InteropServices.COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
         {
             if (!IsDisposed)
                 SetStatus(error.Message);
@@ -315,6 +434,7 @@ internal sealed class HubWindow : ModuleWindow
         {
             closing.Cancel();
             refreshRunning.Dispose();
+            toolHotkeys.Dispose();
             http.Dispose();
             closing.Dispose();
         }

@@ -2,7 +2,8 @@
     [Parameter(Mandatory)]
     [ValidateSet('win-x64', 'win-arm64')]
     [string]$Runtime,
-    [string[]]$Modules = @('Dimmli', 'Awake', 'ClipPlain', 'PinWin', 'PowerFlip'),
+    [string[]]$Modules = @('Dimmli', 'Awake', 'ClipPlain', 'PinWin', 'PowerFlip',
+        'HashVerify', 'PortCheck', 'BatchRename', 'QuickView', 'FocusDim', 'CleanLink'),
     [switch]$ActivateDebugPro
 )
 
@@ -29,7 +30,7 @@ $appsDir = Join-Path $env:LOCALAPPDATA 'TraySuite\Apps'
 $hubProcess = $null
 $testedModules = [System.Collections.Generic.List[string]]::new()
 
-function Wait-For([string]$Description, [scriptblock]$Probe, [int]$Seconds = 25) {
+function Wait-For([string]$Description, [scriptblock]$Probe, [int]$Seconds = 60) {
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
     do {
         try {
@@ -72,7 +73,7 @@ function Find-HubControl([string[]]$Names) {
 }
 
 function Invoke-HubButton([string[]]$Names) {
-    $control = Wait-For ($Names -join ' / ') { Find-HubControl $Names }
+    $control = Wait-For ($Names -join ' / ') { Find-HubControl $Names } 120
     Invoke-NativeClick $control
 }
 

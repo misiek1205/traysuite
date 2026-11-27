@@ -21,10 +21,11 @@ public class PopupWindow : Form
         TopMost = true;
         KeyPreview = true;
         Font = PopupAppearance.CaptionFont;
-        BackColor = theme.Border;
+        BackColor = theme.Background;
         ForeColor = theme.Text;
         Padding = new Padding(1);
-        DpiChanged += (_, _) => BeginInvoke(Place);
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        DpiChanged += (_, _) => BeginInvoke(() => { ShapeWindow(); Place(); });
     }
 
     public void Open(Point position)
@@ -68,7 +69,7 @@ public class PopupWindow : Form
     {
         if (WorkArea.IsEmpty)
             return;
-        int gap = LogicalToDeviceUnits(8);
+        int gap = LogicalToDeviceUnits(12);
         int width = Math.Min(LogicalToDeviceUnits(logicalWidth), Math.Max(1, WorkArea.Width - 2 * gap));
         int height = Math.Min(LogicalToDeviceUnits(logicalHeight), Math.Max(1, WorkArea.Height - 2 * gap));
         int x = Math.Clamp(AnchorPoint.X - width + LogicalToDeviceUnits(24), WorkArea.Left + gap,
@@ -111,12 +112,22 @@ public class PopupWindow : Form
     protected override void OnSizeChanged(EventArgs e)
     {
         base.OnSizeChanged(e);
+        ShapeWindow();
+    }
+
+    private void ShapeWindow()
+    {
         if (Width <= 0 || Height <= 0)
             return;
-        using var outline = PopupAppearance.Rounded(new RectangleF(0, 0, Width, Height), LogicalToDeviceUnits(14));
-        var previous = Region;
+        using var outline = PopupAppearance.Rounded(new RectangleF(0, 0, Width, Height), LogicalToDeviceUnits(19));
         Region = new Region(outline);
-        previous?.Dispose();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        var theme = PopupAppearance.Current;
+        PopupAppearance.Surface(e.Graphics, new RectangleF(.5f, .5f, Width - 1, Height - 1),
+            LogicalToDeviceUnits(19), theme.Background, theme.Border);
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint FindWindow(string className, string? title);

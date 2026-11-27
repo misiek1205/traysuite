@@ -3,11 +3,9 @@
     <OutputType>WinExe</OutputType>
     <Product>TraySuite Hub</Product>
     <RootNamespace>TraySuite.Hub</RootNamespace>
-    <ApplicationIcon>../Apps/Dimmli/Sun.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="catalog.json" LogicalName="TraySuite.Catalog" />
-    <EmbeddedResource Include="../Apps/Dimmli/Sun.ico" LogicalName="TraySuite.Icon" />
     <ProjectReference Include="../Suite.Core/Suite.Core.csproj" />
   </ItemGroup>
 </Project>

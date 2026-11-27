@@ -8,7 +8,7 @@ internal static class Program
 {
     [STAThread]
     private static int Main(string[] args) => AppLifecycle.Run("PinWin", args, () => ApplicationConfiguration.Initialize(),
-        () => new TrayContext("PinWin", "PinWin", new PinWindow(), SystemIcons.Application));
+        () => new TrayContext("PinWin", "PinWin", new PinWindow()));
 }
 
 internal sealed class PinWindow : ModuleWindow
@@ -32,11 +32,11 @@ internal sealed class PinWindow : ModuleWindow
         int modifiers = (int)(settings?.GetValue("Modifiers") ?? 10);
         border = new PopupToggle { Text = Texts.Get("Show border", "Pokaż ramkę"), Checked = settings?.GetValue("Border") is not 0 };
         border.CheckedChanged += (_, _) => { Save("Border", border.Checked ? 1 : 0); UpdatePins(); };
-        Add(Button(Texts.Get("Pin active window", "Przypnij aktywne okno"), () => Toggle(previous, pinOnly: true)), 36);
-        Add(border, 30);
+        Add(Button(Texts.Get("Pin active window", "Przypnij aktywne okno"), () => Toggle(previous, pinOnly: true),
+            PopupGlyph.Pin, PopupButtonStyle.Primary), 39);
+        Add(Card(border), 40);
         Add(Label(Texts.Get("Focus the field and press a new shortcut", "Kliknij pole i naciśnij nowy skrót")), 23);
-        shortcut.BackColor = Theme.Card;
-        shortcut.ForeColor = Theme.Text;
+        shortcut.Font = PopupAppearance.KeyFont;
         shortcut.AccessibleName = Texts.Get("Global shortcut", "Skrót globalny");
         shortcut.KeyDown += (_, e) =>
         {
@@ -48,7 +48,7 @@ internal sealed class PinWindow : ModuleWindow
             if (flags != 0 && e.KeyCode is not (Keys.ControlKey or Keys.Menu or Keys.ShiftKey or Keys.LWin or Keys.RWin))
                 Register((int)e.KeyCode, flags, save: true);
         };
-        Add(shortcut, 28);
+        Add(PopupField.Wrap(shortcut), 36);
         Add(list, 150);
         Remember(GetForegroundWindow());
         foreground = (_, _, window, _, _, _, _) => Remember(window);
@@ -163,7 +163,7 @@ internal sealed class PinWindow : ModuleWindow
             {
                 var title = new StringBuilder(256);
                 GetWindowText(window, title, title.Capacity);
-                string name = title.Length == 0 ? $"0x{window:X}" : title.ToString().Replace("&", "&&");
+                string name = title.Length == 0 ? $"0x{window:X}" : title.ToString();
                 var button = Button(Texts.Get("Unpin ", "Odepnij ") + name, () =>
                 {
                     if (!SetTopmost(window, false) && IsWindowVisible(window))
@@ -174,7 +174,7 @@ internal sealed class PinWindow : ModuleWindow
                     Remove(window);
                     UpdatePins();
                     Render();
-                });
+                }, PopupGlyph.Pin, leftAligned: true);
                 button.Dock = DockStyle.None;
                 button.Size = new Size(Math.Max(100, list.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 8), LogicalToDeviceUnits(32));
                 list.Controls.Add(button);
@@ -203,6 +203,9 @@ internal sealed class PinWindow : ModuleWindow
 
     private sealed class Frame : Form
     {
+        private int previousRadius;
+        private int previousStroke;
+
         public Frame()
         {
             FormBorderStyle = FormBorderStyle.None;
@@ -222,13 +225,23 @@ internal sealed class PinWindow : ModuleWindow
         public void Follow(nint window, Rectangle rect)
         {
             if (rect.Width <= 4 || rect.Height <= 4) { Hide(); return; }
-            if (Size != rect.Size || Region is null)
+            float scale = Math.Max(96u, GetDpiForWindow(window)) / 96f;
+            int stroke = Math.Max(1, (int)Math.Round(2 * scale));
+            int radius = IsZoomed(window) ? 0 : (int)Math.Round(8 * scale);
+            if (Size != rect.Size || Region is null || radius != previousRadius || stroke != previousStroke)
             {
-                var outline = new Region(new Rectangle(Point.Empty, rect.Size));
-                outline.Exclude(new Rectangle(2, 2, rect.Width - 4, rect.Height - 4));
-                var previous = Region;
+                var outer = new Rectangle(Point.Empty, rect.Size);
+                using var edge = PopupAppearance.Rounded(outer, radius);
+                var outline = new Region(edge);
+                var inner = Rectangle.Inflate(outer, -stroke, -stroke);
+                if (inner.Width > 0 && inner.Height > 0)
+                {
+                    using var cutout = PopupAppearance.Rounded(inner, Math.Max(0, radius - stroke));
+                    outline.Exclude(cutout);
+                }
                 Region = outline;
-                previous?.Dispose();
+                previousRadius = radius;
+                previousStroke = stroke;
             }
             if (Bounds != rect) Bounds = rect;
             if (!Visible) Show();
@@ -242,6 +255,8 @@ internal sealed class PinWindow : ModuleWindow
     [DllImport("user32.dll")] private static extern nint SetWinEventHook(uint min, uint max, nint module, WinEvent callback, uint process, uint thread, uint flags);
     [DllImport("user32.dll")] private static extern bool UnhookWinEvent(nint hook);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint window);
+    [DllImport("user32.dll")] private static extern bool IsZoomed(nint window);
     [DllImport("user32.dll")] private static extern nint GetShellWindow();
     [DllImport("user32.dll")] private static extern nint GetWindow(nint window, uint relation);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);

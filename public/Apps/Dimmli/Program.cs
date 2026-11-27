@@ -22,6 +22,7 @@ internal static class Program
             return 0;
 
         ApplicationConfiguration.Initialize();
+        Application.SetColorMode(SystemColorMode.System);
         using var app = new TrayApplication();
         if (mode == "--open")
             app.OpenFromLauncher();

@@ -17,24 +17,36 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return "0.0"; }
     }
     public bool StartsWithWindows(string id) => Startup.IsEnabled(StartupName(id), Executable(id));
+    public bool HasOpenWindow(string id)
+    {
+        var candidates = Process.GetProcessesByName(id);
+        try { return candidates.Any(process => MatchesExecutable(process, Executable(id))); }
+        finally { foreach (var process in candidates) process.Dispose(); }
+    }
     public void SetStartup(string id, bool enabled) => Startup.Set(StartupName(id), Executable(id), enabled, onlyOwnEntry: true);
     private string Marker(string id) => Path.Combine(root, id, VersionFile);
     private static string StartupName(string id) => id == "Dimmli" ? "Brightness" : id;
 
-    public void Start(CatalogApp app, bool open)
+    public void Start(CatalogApp app, bool open, IEnumerable<string>? paths = null)
     {
         if (app.Pro && !LicenseManager.IsPro)
             throw new InvalidOperationException(Texts.Get("Activate Pro first.", "Najpierw aktywuj wersję Pro."));
         var executable = Executable(app.Id);
         if (!File.Exists(executable))
             throw new FileNotFoundException(Texts.Get("Install this tool first.", "Najpierw zainstaluj narzędzie."));
-        using var process = Process.Start(new ProcessStartInfo(executable, open ? "--open" : "--start")
+        var start = new ProcessStartInfo(executable)
         {
             UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(executable)!
-        });
+        };
+        if (paths is null)
+            start.ArgumentList.Add(open ? "--open" : "--start");
+        else
+            foreach (string path in paths)
+                start.ArgumentList.Add(path);
+        using var process = Process.Start(start);
     }
 
-    public async Task Stop(string id, CancellationToken token)
+    public async Task Stop(string id, CancellationToken token, bool resident = true)
     {
         var candidates = Process.GetProcessesByName(id);
         string executable = Executable(id);
@@ -43,7 +55,7 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
         try
         {
             var installed = candidates.Where(process => MatchesExecutable(process, executable)).ToArray();
-            if (AppLifecycle.IsRunning(id))
+            if (resident && AppLifecycle.IsRunning(id))
             {
                 var reply = await AppLifecycle.Send(id, "--exit", timeout.Token);
                 if (!reply.Success)
@@ -51,6 +63,10 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
                 while (AppLifecycle.IsRunning(id))
                     await Task.Delay(100, timeout.Token);
             }
+            if (!resident)
+                foreach (var process in installed)
+                    if (!process.HasExited)
+                        process.CloseMainWindow();
             foreach (var process in installed)
                 await process.WaitForExitAsync(timeout.Token);
         }
@@ -112,13 +128,22 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
             if (!File.Exists(Path.Combine(payload, app.Id + ".exe")))
                 throw new InvalidDataException(Texts.Get("Executable missing from the package.", "Brak pliku wykonywalnego w paczce."));
             await File.WriteAllTextAsync(Path.Combine(payload, VersionFile), source.Version, token);
-            bool running = AppLifecycle.IsRunning(app.Id);
-            await Stop(app.Id, token);
-            if (Directory.Exists(destination))
-                await MoveInstalledDirectory(destination, backup, token);
-            try { Directory.Move(payload, destination); }
+            bool running = app.Resident && AppLifecycle.IsRunning(app.Id);
+            await Stop(app.Id, token, app.Resident);
+            bool promoted = false;
+            try
+            {
+                if (Directory.Exists(destination))
+                    await MoveInstalledDirectory(destination, backup, token);
+                Directory.Move(payload, destination);
+                promoted = true;
+                if (!app.Resident)
+                    ToolShortcuts.Install(app, Executable(app.Id));
+            }
             catch
             {
+                if (promoted)
+                    await MoveInstalledDirectory(destination, payload, CancellationToken.None);
                 Recover(destination, backup);
                 if (running && File.Exists(Executable(app.Id)))
                     Start(app, open: false);
@@ -131,13 +156,14 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
         finally { RemoveDirectory(staging); }
     }
 
-    public async Task Uninstall(string id, CancellationToken token)
+    public async Task Uninstall(CatalogApp app, CancellationToken token)
     {
+        string id = app.Id;
         using var operation = Lock(id);
         string destination = Path.Combine(root, id);
         string backup = Path.Combine(root, "." + id + ".backup");
         Recover(destination, backup);
-        await Stop(id, token);
+        await Stop(id, token, app.Resident);
         bool startup = StartsWithWindows(id);
         if (startup)
             SetStartup(id, false);
@@ -154,6 +180,8 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
             throw;
         }
         RemoveDirectory(tombstone);
+        if (!app.Resident)
+            ToolShortcuts.Remove(app, Executable(id));
     }
 
     private static async Task MoveInstalledDirectory(string source, string destination, CancellationToken token)
@@ -200,9 +228,7 @@ internal sealed class PackageStore(PackageCatalog catalog, string root)
             token.ThrowIfCancellationRequested();
             string name = Path.GetFileName(path);
             if (name.StartsWith(id + ".", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("Suite.Core.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("System.Management.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("System.CodeDom.dll", StringComparison.OrdinalIgnoreCase))
+                Path.GetExtension(name).Equals(".dll", StringComparison.OrdinalIgnoreCase))
                 File.Copy(path, Path.Combine(destination, name));
         }
     }

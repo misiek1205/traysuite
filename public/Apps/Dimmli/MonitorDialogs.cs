@@ -39,9 +39,11 @@ internal static class MonitorDiagnostics
 
 internal static class MonitorDialogs
 {
+    private static PopupAppearance Theme => PopupAppearance.Current;
+
     public static AutomationSettings? EditAutomation(AutomationSettings current)
     {
-        using var dialog = CreateDialog(Texts.Get("Automation", "Automatyzacja"), new Size(495, 340));
+        using var dialog = CreateDialog(Texts.Get("Automation", "Automatyzacja"), new Size(526, 391));
         var fields = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 57));
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 43));
@@ -50,13 +52,13 @@ internal static class MonitorDialogs
         mode.Items.AddRange([Texts.Get("Off", "Wyłączony"), Texts.Get("Fixed hours", "Stałe godziny"),
             Texts.Get("Sunrise and sunset", "Wschód i zachód słońca")]);
         mode.SelectedIndex = (int)current.Schedule;
-        var day = ClockField(current.DayMinutes);
-        var evening = ClockField(current.EveningMinutes);
+        var day = new ClockField(current.DayMinutes);
+        var evening = new ClockField(current.EveningMinutes);
         var latitude = new NumericUpDown { Minimum = -90, Maximum = 90, DecimalPlaces = 2, Value = (decimal)current.Latitude };
         var longitude = new NumericUpDown { Minimum = -180, Maximum = 180, DecimalPlaces = 2, Value = (decimal)current.Longitude };
-        var boost = new CheckBox { Checked = current.Fullscreen, Text = Texts.Get("Enabled", "Włączone") };
+        var boost = new PopupToggle { Checked = current.Fullscreen, Text = Texts.Get("Enabled", "Włączone") };
         var level = new NumericUpDown { Minimum = 0, Maximum = 100, Value = current.FullscreenLevel };
-        var hint = new Label { AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+        var hint = ModuleWindow.Label("", muted: true);
 
         AddField(Texts.Get("Profile schedule", "Harmonogram profili"), mode);
         AddField(Texts.Get("Day / fallback", "Dzień / godzina rezerwowa"), day);
@@ -65,7 +67,7 @@ internal static class MonitorDialogs
         AddField(Texts.Get("Longitude", "Długość geograficzna"), longitude);
         AddField(Texts.Get("Fullscreen boost", "Rozjaśnianie na pełnym ekranie"), boost);
         AddField(Texts.Get("Fullscreen brightness (%)", "Jasność na pełnym ekranie (%)"), level);
-        fields.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        fields.RowStyles.Add(new RowStyle(SizeType.Percent, 1.25f));
         fields.Controls.Add(hint, 0, fields.RowCount++);
         fields.SetColumnSpan(hint, 2);
         var buttons = DialogButtons(dialog);
@@ -81,7 +83,7 @@ internal static class MonitorDialogs
             if (dialog.DialogResult != DialogResult.OK)
                 return;
             var candidate = new AutomationSettings((ScheduleMode)mode.SelectedIndex,
-                (int)day.Value.TimeOfDay.TotalMinutes, (int)evening.Value.TimeOfDay.TotalMinutes,
+                day.Minutes, evening.Minutes,
                 (double)latitude.Value, (double)longitude.Value, boost.Checked, (int)level.Value);
             if (candidate.IsValid())
                 result = candidate;
@@ -96,15 +98,16 @@ internal static class MonitorDialogs
 
         void AddField(string label, Control control)
         {
-            control.Dock = DockStyle.Fill;
             control.AccessibleName = label;
+            if (control is ClockField clock)
+                clock.Describe(label);
+            var field = control is PopupToggle or ClockField ? control : PopupField.Wrap(control);
+            field.Dock = DockStyle.Fill;
+            field.Margin = new Padding(0, 2, 0, 3);
             int row = fields.RowCount++;
-            fields.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            fields.Controls.Add(new Label
-            {
-                Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true
-            }, 0, row);
-            fields.Controls.Add(control, 1, row);
+            fields.RowStyles.Add(new RowStyle(SizeType.Percent, 1));
+            fields.Controls.Add(ModuleWindow.Label(label), 0, row);
+            fields.Controls.Add(field, 1, row);
         }
 
         void UpdateFields()
@@ -122,39 +125,87 @@ internal static class MonitorDialogs
 
     public static int? EditOffset(string displayName, int offset)
     {
-        using var dialog = CreateDialog(Texts.Get("Brightness calibration", "Kalibracja jasności"), new Size(436, 165));
+        using var dialog = CreateDialog(Texts.Get("Brightness calibration", "Kalibracja jasności"), new Size(456, 178));
         var label = new Label { Text = displayName, AutoEllipsis = true, Dock = DockStyle.Top, Height = 28,
             Font = PopupAppearance.LabelFont };
         var hint = new Label
         {
             Text = Texts.Get("Offset from the common brightness level, in percentage points.",
                 "Przesunięcie względem wspólnej jasności, w punktach procentowych."),
-            Dock = DockStyle.Top, Height = 31
+            Dock = DockStyle.Top, Height = 35, ForeColor = Theme.Muted
         };
         var input = new NumericUpDown
         {
             Minimum = -20, Maximum = 20, Value = offset, Dock = DockStyle.Top, AccessibleName = dialog.Text
         };
         var buttons = DialogButtons(dialog);
-        dialog.Controls.Add(input);
+        dialog.Controls.Add(TopField(input));
         dialog.Controls.Add(hint);
         dialog.Controls.Add(label);
         dialog.Controls.Add(buttons);
-        dialog.ActiveControl = input;
+        dialog.Shown += (_, _) => input.Focus();
         return dialog.ShowDialog() == DialogResult.OK ? (int)input.Value : null;
     }
 
-    private static DateTimePicker ClockField(int minutes) => new()
+    private sealed class ClockField : TableLayoutPanel
     {
-        Format = DateTimePickerFormat.Custom, CustomFormat = "HH:mm", ShowUpDown = true,
-        Value = DateTime.Today.AddMinutes(minutes)
-    };
+        private readonly ClockPart hour;
+        private readonly ClockPart minute;
+
+        public ClockField(int minutes)
+        {
+            hour = new ClockPart(23, minutes / 60);
+            minute = new ClockPart(59, minutes % 60);
+            ColumnCount = 3;
+            RowCount = 1;
+            RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            Controls.Add(PopupField.Wrap(hour), 0, 0);
+            var separator = ModuleWindow.Label(":", font: PopupAppearance.LabelFont);
+            separator.AutoSize = true;
+            separator.Padding = new Padding(4, 0, 4, 0);
+            Controls.Add(separator, 1, 0);
+            Controls.Add(PopupField.Wrap(minute), 2, 0);
+            foreach (Control control in Controls)
+            {
+                control.Dock = DockStyle.Fill;
+                control.Margin = Padding.Empty;
+            }
+        }
+
+        public int Minutes => (int)(hour.Value * 60 + minute.Value);
+
+        public void Describe(string label)
+        {
+            hour.AccessibleName = $"{label} (HH)";
+            minute.AccessibleName = $"{label} (mm)";
+        }
+    }
+
+    private sealed class ClockPart : NumericUpDown
+    {
+        public ClockPart(int maximum, int initial)
+        {
+            Maximum = maximum;
+            Value = initial;
+            UpdateEditText();
+        }
+
+        protected override void UpdateEditText()
+        {
+            ChangingText = true;
+            Text = Value.ToString("00");
+            UserEdit = false;
+        }
+    }
 
     private static FlowLayoutPanel DialogButtons(Form dialog)
     {
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 36, FlowDirection = FlowDirection.RightToLeft };
-        var save = new Button { Text = Texts.Get("Save", "Zapisz"), DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = Texts.Get("Cancel", "Anuluj"), DialogResult = DialogResult.Cancel, AutoSize = true };
+        var buttons = Footer();
+        var save = DialogButton(Texts.Get("Save", "Zapisz"), DialogResult.OK, primary: true);
+        var cancel = DialogButton(Texts.Get("Cancel", "Anuluj"), DialogResult.Cancel);
         buttons.Controls.Add(save);
         buttons.Controls.Add(cancel);
         dialog.AcceptButton = save;
@@ -164,7 +215,7 @@ internal static class MonitorDialogs
 
     public static string? Rename(string displayName, string alias)
     {
-        using var dialog = CreateDialog(Texts.Get("Monitor name", "Nazwa monitora"), new Size(420, 172));
+        using var dialog = CreateDialog(Texts.Get("Monitor name", "Nazwa monitora"), new Size(456, 181));
         var label = new Label
         {
             Text = displayName, AutoEllipsis = true, Dock = DockStyle.Top, Height = 30,
@@ -174,31 +225,15 @@ internal static class MonitorDialogs
         {
             Text = Texts.Get("Leave blank to use the monitor's original name.",
                 "Pozostaw puste pole, aby przywrócić nazwę monitora."),
-            Dock = DockStyle.Top, Height = 30
+            Dock = DockStyle.Top, Height = 35, ForeColor = Theme.Muted
         };
         var input = new TextBox { Dock = DockStyle.Top, Text = alias, MaxLength = 64, AccessibleName = dialog.Text };
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom, Height = 36, FlowDirection = FlowDirection.RightToLeft
-        };
-        var save = new Button
-        {
-            Text = Texts.Get("Save", "Zapisz"), DialogResult = DialogResult.OK, AutoSize = true
-        };
-        var cancel = new Button
-        {
-            Text = Texts.Get("Cancel", "Anuluj"), DialogResult = DialogResult.Cancel, AutoSize = true
-        };
-        buttons.Controls.Add(save);
-        buttons.Controls.Add(cancel);
-        dialog.Controls.Add(input);
+        var buttons = DialogButtons(dialog);
+        dialog.Controls.Add(TopField(input));
         dialog.Controls.Add(hint);
         dialog.Controls.Add(label);
         dialog.Controls.Add(buttons);
-        dialog.AcceptButton = save;
-        dialog.CancelButton = cancel;
-        dialog.ActiveControl = input;
-        input.SelectAll();
+        dialog.Shown += (_, _) => { input.Focus(); input.SelectAll(); };
         return dialog.ShowDialog() == DialogResult.OK ? input.Text.Trim() : null;
     }
 
@@ -213,14 +248,12 @@ internal static class MonitorDialogs
         var details = new TextBox
         {
             Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill,
-            Text = report, AccessibleName = header.Text, BackColor = SystemColors.Window
+            Text = report, AccessibleName = header.Text, BackColor = Theme.Card, ForeColor = Theme.Text,
+            BorderStyle = BorderStyle.None, Font = PopupAppearance.KeyFont
         };
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom, Height = 42, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 7, 0, 0)
-        };
-        var close = new Button { Text = Texts.Get("Close", "Zamknij"), DialogResult = DialogResult.Cancel, AutoSize = true };
-        var copy = new Button { Text = Texts.Get("Copy report", "Kopiuj raport"), AutoSize = true };
+        var buttons = Footer();
+        var close = DialogButton(Texts.Get("Close", "Zamknij"), DialogResult.Cancel);
+        var copy = DialogButton(Texts.Get("Copy report", "Kopiuj raport"), primary: true, width: 158);
         copy.Click += (_, _) =>
         {
             try
@@ -235,7 +268,7 @@ internal static class MonitorDialogs
         };
         buttons.Controls.Add(close);
         buttons.Controls.Add(copy);
-        dialog.Controls.Add(details);
+        dialog.Controls.Add(ModuleWindow.Card(details, new Padding(13)));
         dialog.Controls.Add(header);
         dialog.Controls.Add(buttons);
         dialog.CancelButton = close;
@@ -243,12 +276,54 @@ internal static class MonitorDialogs
         dialog.ShowDialog();
     }
 
-    private static Form CreateDialog(string title, Size size) => new()
+    private static PopupField TopField(Control input)
     {
-        Text = title, ClientSize = size, Padding = new Padding(16),
+        var field = PopupField.Wrap(input);
+        field.Dock = DockStyle.Top;
+        field.Height = 36;
+        return field;
+    }
+
+    private static FlowLayoutPanel Footer() => new()
+    {
+        Dock = DockStyle.Bottom, Height = 46, FlowDirection = FlowDirection.RightToLeft,
+        Padding = new Padding(0, 10, 0, 0)
+    };
+
+    private static PopupButton DialogButton(string text, DialogResult result = DialogResult.None, bool primary = false,
+        int width = 96) => new(style: primary ? PopupButtonStyle.Primary : PopupButtonStyle.Standard)
+    {
+        Text = text, DialogResult = result, Size = new Size(width, 34), Margin = new Padding(7, 0, 0, 0)
+    };
+
+    private static Form CreateDialog(string title, Size size) => new MonitorDialog
+    {
+        Text = title, ClientSize = size, Padding = new Padding(20),
         AutoScaleMode = AutoScaleMode.Dpi, AutoScaleDimensions = new SizeF(96, 96),
         FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen,
         ShowInTaskbar = false, MaximizeBox = false, MinimizeBox = false, TopMost = true,
-        Font = PopupAppearance.CaptionFont
+        Font = PopupAppearance.CaptionFont, BackColor = Theme.Background, ForeColor = Theme.Text
     };
+
+    private sealed class MonitorDialog : Form
+    {
+        private const int ImmersiveDarkMode = 20;
+        private const int CaptionColor = 35;
+        private const int TextColor = 36;
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) || SystemInformation.HighContrast)
+                return;
+            SetFrameAttribute(ImmersiveDarkMode, Theme.Background.GetBrightness() < .5f ? 1 : 0);
+            SetFrameAttribute(CaptionColor, ColorTranslator.ToWin32(Theme.Background));
+            SetFrameAttribute(TextColor, ColorTranslator.ToWin32(Theme.Text));
+        }
+
+        private void SetFrameAttribute(int attribute, int value) => DwmSetWindowAttribute(Handle, attribute, ref value, sizeof(int));
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
+    }
 }

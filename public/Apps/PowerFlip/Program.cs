@@ -8,7 +8,7 @@ internal static class Program
 {
     [STAThread]
     private static int Main(string[] args) => AppLifecycle.Run("PowerFlip", args, () => ApplicationConfiguration.Initialize(),
-        () => new TrayContext("PowerFlip", "PowerFlip", new PowerWindow(), SystemIcons.Information));
+        () => new TrayContext("PowerFlip", "PowerFlip", new PowerWindow()));
 }
 
 internal sealed class PowerWindow : ModuleWindow
@@ -16,7 +16,8 @@ internal sealed class PowerWindow : ModuleWindow
     private const string Preferences = @"Software\TraySuite\PowerFlip";
     private static readonly Guid Processor = new("54533251-82be-4824-96c1-47b60b740d00");
     private static readonly Guid MaxProcessor = new("bc5038f7-23e0-4960-96da-33abaf5935ec");
-    private readonly Label active = Label("");
+    private readonly Label active = Label("", font: PopupAppearance.LabelFont);
+    private readonly PopupButton[] planButtons;
     private readonly PopupToggle quiet = new()
     {
         Text = Texts.Get("Quiet / Cool Mode (99% CPU)", "Tryb Cichy / Chłodny (99% CPU)")
@@ -32,13 +33,17 @@ internal sealed class PowerWindow : ModuleWindow
 
     public PowerWindow() : base("PowerFlip", Texts.Get("Power plans and processor limit", "Plany zasilania i limit procesora"), 360)
     {
-        Add(active, 28);
-        foreach (var plan in plans) Add(Button(plan.Label, () => Run(() => SelectPlan(plan.Scheme))), 43);
+        Add(Card(active, featured: true), 48);
+        PopupGlyph[] symbols = [PopupGlyph.Moon, PopupGlyph.Pulse, PopupGlyph.Bolt];
+        planButtons = plans.Select((plan, index) => Button(plan.Label, () => Run(() => SelectPlan(plan.Scheme)),
+            symbols[index], leftAligned: true)).ToArray();
+        foreach (var button in planButtons)
+            Add(button, 42);
         quiet.CheckedChanged += (_, _) =>
         {
             if (!syncing) Run(() => SetQuiet(quiet.Checked));
         };
-        Add(quiet, 39);
+        Add(Card(quiet), 41);
         VisibleChanged += (_, _) =>
         {
             refresh.Enabled = Visible;
@@ -68,6 +73,13 @@ internal sealed class PowerWindow : ModuleWindow
     {
         Guid scheme = Active();
         active.Text = Texts.Get("Active: ", "Aktywny: ") + SchemeName(scheme);
+        using var preferences = Registry.CurrentUser.OpenSubKey(Preferences);
+        for (int index = 0; index < plans.Length; index++)
+        {
+            var template = plans[index].Scheme;
+            planButtons[index].Selected = scheme == template
+                || Guid.TryParse(preferences?.GetValue(template.ToString()) as string, out var copy) && scheme == copy;
+        }
         var (ac, dc) = ReadLimits(scheme);
         syncing = true;
         try { quiet.Checked = ac == 99 && dc == 99; quiet.Enabled = true; }

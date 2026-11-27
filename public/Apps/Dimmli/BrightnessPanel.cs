@@ -4,10 +4,13 @@ internal sealed class BrightnessPanel : PopupWindow
 {
     private static readonly PopupAppearance Theme = PopupAppearance.Current;
     private readonly TableLayoutPanel layout = new();
-    private readonly Panel scroller = new();
+    private readonly Panel scroller = new ThemedScrollPanel();
     private readonly TableLayoutPanel body = new();
     private readonly TableLayoutPanel rows = new();
     private readonly TableLayoutPanel overview = new();
+    private readonly TableLayoutPanel header = new();
+    private readonly TableLayoutPanel footer = new();
+    private readonly TableLayoutPanel masterLayout = new();
     private readonly ShortcutGuide guide;
     private readonly PopupSlider master = new(transparent: true);
     private readonly BrightnessMeter meter = new();
@@ -25,11 +28,11 @@ internal sealed class BrightnessPanel : PopupWindow
     private bool masterKeyHeld;
     private bool overviewVisible;
     private bool guideVisible;
-    private const int HeaderHeight = 72;
-    private const int OverviewHeight = 188;
-    private const int RowHeight = 78;
+    private const int HeaderHeight = 82;
+    private const int OverviewHeight = 180;
+    private const int RowHeight = 82;
     private const int RowGap = 8;
-    private const int FooterHeight = 46;
+    private const int FooterHeight = 53;
 
     public BrightnessPanel(Action refresh, Action<Profile> apply, Action<Profile> save, Action? toggleShortcuts = null)
     {
@@ -43,25 +46,20 @@ internal sealed class BrightnessPanel : PopupWindow
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, FooterHeight));
         Controls.Add(layout);
 
-        var header = new TableLayoutPanel
-        {
-            ColumnCount = 3, RowCount = 2, Dock = DockStyle.Fill,
-            Padding = new Padding(20, 10, 20, 8), Margin = Padding.Empty
-        };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
+        header.ColumnCount = 3;
+        header.RowCount = 2;
+        header.Dock = DockStyle.Fill;
+        header.Margin = Padding.Empty;
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 57));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 43));
         header.RowStyles.Add(new RowStyle(SizeType.Percent, 64));
         header.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
         var tips = new ToolTip();
-        using var resource = typeof(BrightnessPanel).Assembly.GetManifestResourceStream("Dimmli.Sun.ico")!;
-        using var logo = new Icon(resource, 48, 48);
-        var bitmap = logo.ToBitmap();
-        Disposed += (_, _) => { bitmap.Dispose(); tips.Dispose(); };
-        var mark = new PictureBox
+        Disposed += (_, _) => tips.Dispose();
+        var mark = new ModuleMark("Dimmli")
         {
-            Image = bitmap, Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom,
-            Margin = new Padding(0, 2, 12, 2)
+            Dock = DockStyle.Fill, Margin = new Padding(0, 0, 13, 0), TabStop = false
         };
         header.Controls.Add(mark, 0, 0);
         header.SetRowSpan(mark, 2);
@@ -108,11 +106,11 @@ internal sealed class BrightnessPanel : PopupWindow
             BackColor = Theme.Background, Dock = DockStyle.Fill,
             Margin = new Padding(0, 0, 0, 10), Padding = new Padding(16, 12, 11, 8)
         };
-        var masterLayout = new TableLayoutPanel
-        {
-            ColumnCount = 2, RowCount = 3, Dock = DockStyle.Fill, BackColor = Color.Transparent,
-            Margin = Padding.Empty
-        };
+        masterLayout.ColumnCount = 2;
+        masterLayout.RowCount = 3;
+        masterLayout.Dock = DockStyle.Fill;
+        masterLayout.BackColor = Color.Transparent;
+        masterLayout.Margin = Padding.Empty;
         masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         masterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 102));
         masterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
@@ -125,6 +123,7 @@ internal sealed class BrightnessPanel : PopupWindow
         offsetLabel.Font = PopupAppearance.CaptionFont;
         offsetLabel.Margin = Padding.Empty;
         offsetLabel.TextAlign = ContentAlignment.MiddleLeft;
+        offsetLabel.AutoEllipsis = true;
         masterLayout.Controls.Add(offsetLabel, 0, 1);
 
         master.Dock = DockStyle.Fill;
@@ -183,7 +182,7 @@ internal sealed class BrightnessPanel : PopupWindow
             Color surface = SystemInformation.HighContrast ? Theme.Card : PopupAppearance.Tint(Theme.Card, color, .07);
             var tile = new PopupCard(surface)
             {
-                Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(5, 4, 5, 4),
+                Dock = DockStyle.Fill, BackColor = Theme.Background, Padding = new Padding(10, 7, 10, 7),
                 Margin = column == 0 ? new Padding(0, 0, 4, 0) : new Padding(4, 0, 0, 0)
             };
             var pair = new TableLayoutPanel
@@ -227,11 +226,9 @@ internal sealed class BrightnessPanel : PopupWindow
         guide = new ShortcutGuide(() => toggleShortcuts?.Invoke()) { Visible = false };
         scroller.Controls.Add(guide);
 
-        var footer = new TableLayoutPanel
-        {
-            ColumnCount = 2, Dock = DockStyle.Fill, Margin = Padding.Empty,
-            Padding = new Padding(20, 4, 20, 9)
-        };
+        footer.ColumnCount = 2;
+        footer.Dock = DockStyle.Fill;
+        footer.Margin = Padding.Empty;
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 106));
         status.Dock = DockStyle.Fill;
@@ -263,13 +260,27 @@ internal sealed class BrightnessPanel : PopupWindow
     protected override void Place()
     {
         int overviewHeight = overviewVisible ? OverviewHeight : 0;
-        int bodyHeight = guideVisible ? 320 : overviewHeight + Math.Max(1, rows.RowCount) * (RowHeight + RowGap);
+        int bodyHeight = guideVisible ? guide.LogicalHeight : overviewHeight + Math.Max(1, rows.RowCount) * (RowHeight + RowGap);
+        int inset = LogicalToDeviceUnits(19);
+        header.Padding = new Padding(inset, LogicalToDeviceUnits(10), inset, LogicalToDeviceUnits(11));
+        header.ColumnStyles[0].Width = LogicalToDeviceUnits(57);
+        header.ColumnStyles[2].Width = LogicalToDeviceUnits(43);
+        footer.Padding = new Padding(inset, LogicalToDeviceUnits(4), inset, LogicalToDeviceUnits(10));
+        footer.ColumnStyles[1].Width = LogicalToDeviceUnits(112);
+        masterLayout.ColumnStyles[1].Width = LogicalToDeviceUnits(98);
+        scroller.Margin = new Padding(inset, 0, inset, 0);
         layout.RowStyles[0].Height = LogicalToDeviceUnits(HeaderHeight);
         body.RowStyles[0].Height = LogicalToDeviceUnits(overviewHeight);
         layout.RowStyles[2].Height = LogicalToDeviceUnits(FooterHeight);
+        guide.FitToDpi();
         foreach (Control row in rows.Controls)
+        {
             row.Height = LogicalToDeviceUnits(RowHeight);
-        base.Place(360, 2 + HeaderHeight + FooterHeight + bodyHeight);
+            row.Margin = new Padding(0, 0, 0, LogicalToDeviceUnits(RowGap));
+            if (row is BrightnessRow display)
+                display.FitToDpi();
+        }
+        base.Place(390, 2 + HeaderHeight + FooterHeight + bodyHeight);
     }
 
     public void SetStatus(string message)
@@ -322,16 +333,9 @@ internal sealed class BrightnessPanel : PopupWindow
         if (displays.Count == 0)
         {
             rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            rows.Controls.Add(new Label
-            {
-                Text = Texts.Get("No displays found. Connect a display and refresh.",
-                    "Nie wykryto monitorów. Podłącz monitor i odśwież listę."),
-                Height = RowHeight,
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(16, 0, 16, 0),
-                Margin = Padding.Empty
-            }, 0, rows.RowCount++);
+            var empty = ModuleWindow.Card(ModuleWindow.Label(Texts.Get("No displays found. Connect a display and refresh.",
+                "Nie wykryto monitorów. Podłącz monitor i odśwież listę."), muted: true));
+            rows.Controls.Add(empty, 0, rows.RowCount++);
         }
 
         rows.ResumeLayout(true);
@@ -479,6 +483,8 @@ internal sealed class BrightnessRow : PopupCard
     private readonly PopupSlider slider;
     private readonly Label name;
     private readonly Label valueLabel;
+    private readonly TableLayoutPanel heading;
+    private PopupButton? options;
     public Display Display { get; }
     public int Confirmed { get; private set; }
     public int Target => slider.Value;
@@ -494,21 +500,18 @@ internal sealed class BrightnessRow : PopupCard
         Confirmed = Math.Clamp(display.Brightness, 0, 100);
         var theme = PopupAppearance.Current;
         BackColor = theme.Background;
-        Height = 78;
+        Height = 82;
         Dock = DockStyle.Top;
         Margin = new Padding(0, 0, 0, 8);
         Padding = new Padding(14, 7, 15, 7);
 
         var card = new TableLayoutPanel
         {
-            ColumnCount = 3,
+            ColumnCount = 1,
             RowCount = 2,
             Dock = DockStyle.Fill,
-            BackColor = theme.Card
+            BackColor = theme.Card, Margin = Padding.Empty
         };
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        card.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 65));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         card.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         Controls.Add(card);
@@ -521,11 +524,17 @@ internal sealed class BrightnessRow : PopupCard
             TextAlign = ContentAlignment.MiddleLeft,
             Margin = Padding.Empty
         };
-        card.Controls.Add(new PopupIcon(PopupGlyph.Display, theme.Accent)
+        heading = new TableLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty, ColumnCount = 4, RowCount = 1 };
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 34));
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, display.SetBrightness is null ? 0 : 54));
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+        card.Controls.Add(heading, 0, 0);
+        heading.Controls.Add(new PopupIcon(PopupGlyph.Display, theme.Accent)
         {
             Dock = DockStyle.Fill, TabStop = false, Margin = new Padding(0, 0, 10, 0)
         }, 0, 0);
-        card.Controls.Add(name, 1, 0);
+        heading.Controls.Add(name, 1, 0);
 
         valueLabel = new Label
         {
@@ -534,7 +543,8 @@ internal sealed class BrightnessRow : PopupCard
             Margin = Padding.Empty,
             Font = PopupAppearance.ValueFont,
             ForeColor = theme.Accent,
-            Text = $"{Confirmed}%"
+            Text = $"{Confirmed}%",
+            UseMnemonic = false
         };
         slider = new PopupSlider
         {
@@ -551,7 +561,6 @@ internal sealed class BrightnessRow : PopupCard
         };
         if (display.SetBrightness is null)
         {
-            card.SetColumnSpan(name, 2);
             var unavailable = new Label
             {
                 Dock = DockStyle.Fill,
@@ -561,15 +570,13 @@ internal sealed class BrightnessRow : PopupCard
                 Text = Texts.Get("Brightness control unavailable", "Regulacja jasności niedostępna")
             };
             card.Controls.Add(unavailable, 0, 1);
-            card.SetColumnSpan(unavailable, 3);
             slider.Dispose();
             valueLabel.Dispose();
             return;
         }
 
-        card.Controls.Add(valueLabel, 2, 0);
+        heading.Controls.Add(valueLabel, 2, 0);
         card.Controls.Add(slider, 0, 1);
-        card.SetColumnSpan(slider, 3);
         slider.Scroll += (_, _) =>
         {
             valueLabel.Text = $"{slider.Value}%";
@@ -587,7 +594,7 @@ internal sealed class BrightnessRow : PopupCard
 
     public void EnableOptions(Action? rename, Action? calibrate)
     {
-        var menu = new ContextMenuStrip();
+        var menu = new PopupMenu();
         if (rename is not null)
             menu.Items.Add(Texts.Get("Rename monitor…", "Zmień nazwę monitora…")).Click += (_, _) => rename();
         if (calibrate is not null)
@@ -596,7 +603,25 @@ internal sealed class BrightnessRow : PopupCard
         name.ContextMenuStrip = menu;
         if (!slider.IsDisposed)
             slider.ContextMenuStrip = menu;
+        options = new PopupButton(PopupGlyph.More, iconOnly: true, inset: true)
+        {
+            Text = Texts.Get("Settings", "Ustawienia"),
+            Dock = DockStyle.Fill, Margin = new Padding(LogicalToDeviceUnits(4), 0, 0, 0),
+            BackColor = PopupAppearance.Current.Card
+        };
+        heading.ColumnStyles[3].Width = LogicalToDeviceUnits(32);
+        heading.Controls.Add(options, 3, 0);
+        options.Click += (_, _) => menu.Show(options, new Point(options.Width, options.Height), ToolStripDropDownDirection.BelowLeft);
         Disposed += (_, _) => menu.Dispose();
+    }
+
+    public void FitToDpi()
+    {
+        heading.ColumnStyles[0].Width = LogicalToDeviceUnits(31);
+        heading.ColumnStyles[2].Width = slider.IsDisposed ? 0 : LogicalToDeviceUnits(65);
+        heading.ColumnStyles[3].Width = options is null ? 0 : LogicalToDeviceUnits(31);
+        Padding = new Padding(LogicalToDeviceUnits(13), LogicalToDeviceUnits(6),
+            LogicalToDeviceUnits(13), LogicalToDeviceUnits(8));
     }
 
     public void SetTarget(int value)

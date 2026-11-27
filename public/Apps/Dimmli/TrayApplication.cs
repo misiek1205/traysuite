@@ -13,7 +13,7 @@ internal sealed class TrayApplication : ApplicationContext
     private const string OffsetsKey = PreferencesKey + @"\Offsets";
     private readonly TrayIcon tray;
     private readonly TrayWheel wheel;
-    private readonly ContextMenuStrip menu = new();
+    private readonly PopupMenu menu = new();
     private readonly Icon icon;
     private readonly BrightnessPanel panel;
     private readonly GlobalShortcuts globalShortcuts;
@@ -57,9 +57,7 @@ internal sealed class TrayApplication : ApplicationContext
 
     public TrayApplication()
     {
-        using var resource = typeof(TrayApplication).Assembly.GetManifestResourceStream("Dimmli.Sun.ico")!;
-        using var sourceIcon = new Icon(resource);
-        icon = (Icon)sourceIcon.Clone();
+        icon = ModuleIdentity.For("Dimmli").CreateTrayIcon(SystemInformation.SmallIconSize.Width);
         panel = new BrightnessPanel(RequestRefresh, profile => ApplyProfile(profile), SaveProfile, ToggleShortcuts);
         try
         {
